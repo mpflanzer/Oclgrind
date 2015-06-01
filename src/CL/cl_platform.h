@@ -1,5 +1,5 @@
 /**********************************************************************************
- * Copyright (c) 2008-2012 The Khronos Group Inc.
+ * Copyright (c) 2008-2013 The Khronos Group Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and/or associated documentation files (the
@@ -67,6 +67,12 @@ extern "C" {
         #define CL_EXT_SUFFIX__VERSION_1_2              CL_EXTENSION_WEAK_LINK AVAILABLE_MAC_OS_X_VERSION_10_7_AND_LATER
         #define CL_EXT_SUFFIX__VERSION_1_1_DEPRECATED   CL_EXTENSION_WEAK_LINK AVAILABLE_MAC_OS_X_VERSION_10_7_AND_LATER
     #endif
+
+    #define CL_API_SUFFIX__VERSION_2_0
+    #define CL_EXT_SUFFIX__VERSION_2_0
+    #define CL_EXT_PREFIX__VERSION_2_0_DEPRECATED
+    #define CL_EXT_SUFFIX__VERSION_2_0_DEPRECATED
+
 #else
     #define CL_EXTENSION_WEAK_LINK  
     #define CL_API_SUFFIX__VERSION_1_0
@@ -75,6 +81,8 @@ extern "C" {
     #define CL_EXT_SUFFIX__VERSION_1_1
     #define CL_API_SUFFIX__VERSION_1_2
     #define CL_EXT_SUFFIX__VERSION_1_2
+    #define CL_API_SUFFIX__VERSION_2_0
+    #define CL_EXT_SUFFIX__VERSION_2_0
     
     #ifdef __GNUC__
         #ifdef CL_USE_DEPRECATED_OPENCL_1_0_APIS
@@ -92,9 +100,17 @@ extern "C" {
             #define CL_EXT_SUFFIX__VERSION_1_1_DEPRECATED __attribute__((deprecated))
             #define CL_EXT_PREFIX__VERSION_1_1_DEPRECATED    
         #endif
+
+        #ifdef CL_USE_DEPRECATED_OPENCL_2_0_APIS
+            #define CL_EXT_SUFFIX__VERSION_2_0_DEPRECATED
+            #define CL_EXT_PREFIX__VERSION_2_0_DEPRECATED
+        #else
+            #define CL_EXT_SUFFIX__VERSION_2_0_DEPRECATED __attribute__((deprecated))
+            #define CL_EXT_PREFIX__VERSION_2_0_DEPRECATED
+         #endif
     #elif _WIN32
         #ifdef CL_USE_DEPRECATED_OPENCL_1_0_APIS
-            #define CL_EXT_SUFFIX__VERSION_1_0_DEPRECATED    
+            #define CL_EXT_SUFFIX__VERSION_1_0_DEPRECATED
             #define CL_EXT_PREFIX__VERSION_1_0_DEPRECATED    
         #else
             #define CL_EXT_SUFFIX__VERSION_1_0_DEPRECATED 
@@ -108,12 +124,23 @@ extern "C" {
             #define CL_EXT_SUFFIX__VERSION_1_1_DEPRECATED 
             #define CL_EXT_PREFIX__VERSION_1_1_DEPRECATED __declspec(deprecated)     
         #endif
+    
+        #ifdef CL_USE_DEPRECATED_OPENCL_2_0_APIS
+            #define CL_EXT_SUFFIX__VERSION_2_0_DEPRECATED
+            #define CL_EXT_PREFIX__VERSION_2_0_DEPRECATED
+        #else
+            #define CL_EXT_SUFFIX__VERSION_2_0_DEPRECATED
+            #define CL_EXT_PREFIX__VERSION_2_0_DEPRECATED __declspec(deprecated)
+        #endif
     #else
         #define CL_EXT_SUFFIX__VERSION_1_0_DEPRECATED
         #define CL_EXT_PREFIX__VERSION_1_0_DEPRECATED
     
         #define CL_EXT_SUFFIX__VERSION_1_1_DEPRECATED
         #define CL_EXT_PREFIX__VERSION_1_1_DEPRECATED
+    
+        #define CL_EXT_SUFFIX__VERSION_2_0_DEPRECATED
+        #define CL_EXT_PREFIX__VERSION_2_0_DEPRECATED
     #endif
 #endif
 

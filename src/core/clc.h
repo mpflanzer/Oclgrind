@@ -826,6 +826,7 @@ typedef uint cl_mem_fence_flags;
 #define CLK_GLOBAL_MEM_FENCE (1<<1)
 
 void barrier(cl_mem_fence_flags);
+void work_group_barrier(cl_mem_fence_flags);
 void mem_fence(cl_mem_fence_flags);
 void read_mem_fence(cl_mem_fence_flags);
 void write_mem_fence(cl_mem_fence_flags);

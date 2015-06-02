@@ -51,13 +51,17 @@ src/core/clc_h.cpp: src/core/gen_clc_h.sh	src/core/clc.h
 
 install-data-hook:
 	cp -p src/include/oclgrind/clc.h      $(DESTDIR)$(includedir)/oclgrind/
-	cp -p src/include/oclgrind/clc32.pch  $(DESTDIR)$(includedir)/oclgrind/
-	cp -p src/include/oclgrind/clc64.pch  $(DESTDIR)$(includedir)/oclgrind/
+	cp -p src/include/oclgrind/clc1.2_32.pch  $(DESTDIR)$(includedir)/oclgrind/
+	cp -p src/include/oclgrind/clc1.2_64.pch  $(DESTDIR)$(includedir)/oclgrind/
+	cp -p src/include/oclgrind/clc2.0_32.pch  $(DESTDIR)$(includedir)/oclgrind/
+	cp -p src/include/oclgrind/clc2.0_64.pch  $(DESTDIR)$(includedir)/oclgrind/
 
 uninstall-hook:
 	rm -rf $(DESTDIR)$(includedir)/oclgrind/clc.h
-	rm -rf $(DESTDIR)$(includedir)/oclgrind/clc32.pch
-	rm -rf $(DESTDIR)$(includedir)/oclgrind/clc64.pch
+	rm -rf $(DESTDIR)$(includedir)/oclgrind/clc1.2_32.pch
+	rm -rf $(DESTDIR)$(includedir)/oclgrind/clc1.2_64.pch
+	rm -rf $(DESTDIR)$(includedir)/oclgrind/clc2.0_32.pch
+	rm -rf $(DESTDIR)$(includedir)/oclgrind/clc2.0_64.pch
 
 RUNTIME_SOURCES = src/runtime/async_queue.h				\
  src/runtime/async_queue.cpp src/runtime/icd.h src/runtime/runtime.cpp
@@ -83,8 +87,10 @@ oclgrind: $(top_srcdir)/src/runtime/oclgrind
 	>$@
 noinst_SCRIPTS = oclgrind.icd \
  src/include/oclgrind/clc.h \
- src/include/oclgrind/clc32.pch \
- src/include/oclgrind/clc64.pch
+ src/include/oclgrind/clc1.2_32.pch \
+ src/include/oclgrind/clc1.2_64.pch \
+ src/include/oclgrind/clc2.0_32.pch \
+ src/include/oclgrind/clc2.0_64.pch
 oclgrind.icd: liboclgrind-rt-icd.la
 	printf $(libdir)/ >$@
 	$(GREP) dlname $< | $(AWK) -F "'" '{print $$2}' >>$@
@@ -93,19 +99,34 @@ src/include/oclgrind/clc.h: $(top_srcdir)/src/core/clc.h
 	mkdir -p src/include/oclgrind
 	cp $< $@
 
-src/include/oclgrind/clc32.pch: src/include/oclgrind/clc.h
+src/include/oclgrind/clc1.2_32.pch: src/include/oclgrind/clc.h
 	$(clang) \
 		-cc1 -x cl -cl-std=CL1.2 -O0 -g -fno-builtin \
 		-emit-pch -triple spir-unknown-unknown \
 		-relocatable-pch \
-                -isysroot $(abs_builddir)/src/include/oclgrind \
+		-isysroot $(abs_builddir)/src/include/oclgrind \
 		$< -o $@
-src/include/oclgrind/clc64.pch: src/include/oclgrind/clc.h
+src/include/oclgrind/clc1.2_64.pch: src/include/oclgrind/clc.h
 	$(clang) \
 		-cc1 -x cl -cl-std=CL1.2 -O0 -g -fno-builtin \
 		-emit-pch -triple spir64-unknown-unknown \
 		-relocatable-pch \
-                -isysroot $(abs_builddir)/src/include/oclgrind \
+		-isysroot $(abs_builddir)/src/include/oclgrind \
+		$< -o $@
+
+src/include/oclgrind/clc2.0_32.pch: src/include/oclgrind/clc.h
+	$(clang) \
+		-cc1 -x cl -cl-std=CL2.0 -O0 -g -fno-builtin -fblocks \
+		-emit-pch -triple spir-unknown-unknown \
+		-relocatable-pch \
+		-isysroot $(abs_builddir)/src/include/oclgrind \
+		$< -o $@
+src/include/oclgrind/clc2.0_64.pch: src/include/oclgrind/clc.h
+	$(clang) \
+		-cc1 -x cl -cl-std=CL2.0 -O0 -g -fno-builtin -fblocks \
+		-emit-pch -triple spir64-unknown-unknown \
+		-relocatable-pch \
+		-isysroot $(abs_builddir)/src/include/oclgrind \
 		$< -o $@
 
 check_PROGRAMS = tests/apps/vecadd/vecadd

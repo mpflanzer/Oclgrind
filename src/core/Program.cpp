@@ -247,8 +247,9 @@ bool Program::build(const char *options, list<Header> headers)
     if (pchdir)
     {
       // Select precompiled header
-      pch = new char[strlen(pchdir) + 20];
-      sprintf(pch, "%s/clc%d.pch", pchdir, (sizeof(size_t) == 4 ? 32 : 64));
+      pch = new char[strlen(pchdir) + 24];
+      sprintf(pch, "%s/clc%s_%d.pch", pchdir, clstd+10,
+              (sizeof(size_t) == 4 ? 32 : 64));
 
       // Check if precompiled header exists
       ifstream pchfile(pch);

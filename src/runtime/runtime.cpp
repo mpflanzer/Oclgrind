@@ -1932,7 +1932,7 @@ clCreateSampler
 
   if (normalized_coords)
   {
-    bitfield |= 0x0001;
+    bitfield |= CLK_NORMALIZED_COORDS_TRUE;
   }
 
   switch (addressing_mode)
@@ -1940,16 +1940,16 @@ clCreateSampler
     case CL_ADDRESS_NONE:
       break;
     case CL_ADDRESS_CLAMP_TO_EDGE:
-      bitfield |= 0x0002;
+      bitfield |= CLK_ADDRESS_CLAMP_TO_EDGE;
       break;
     case CL_ADDRESS_CLAMP:
-      bitfield |= 0x0004;
+      bitfield |= CLK_ADDRESS_CLAMP;
       break;
     case CL_ADDRESS_REPEAT:
-      bitfield |= 0x0006;
+      bitfield |= CLK_ADDRESS_REPEAT;
       break;
     case CL_ADDRESS_MIRRORED_REPEAT:
-      bitfield |= 0x0008;
+      bitfield |= CLK_ADDRESS_MIRRORED_REPEAT;
       break;
     default:
       SetErrorArg(context, CL_INVALID_VALUE, addressing_mode);
@@ -1959,10 +1959,10 @@ clCreateSampler
   switch (filter_mode)
   {
     case CL_FILTER_NEAREST:
-      bitfield |= 0x0010;
+      bitfield |= CLK_FILTER_NEAREST;
       break;
     case CL_FILTER_LINEAR:
-      bitfield |= 0x0020;
+      bitfield |= CLK_FILTER_LINEAR;
       break;
     default:
       SetErrorArg(context, CL_INVALID_VALUE, filter_mode);

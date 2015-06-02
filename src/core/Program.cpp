@@ -126,10 +126,8 @@ bool Program::build(const char *options, list<Header> headers)
 
   // Set compiler arguments
   vector<const char*> args;
-  args.push_back("-cl-std=CL1.2");
   args.push_back("-cl-kernel-arg-info");
   args.push_back("-fno-builtin");
-  args.push_back("-fblocks");
   args.push_back("-g");
   args.push_back("-triple");
   if (sizeof(size_t) == 4)
@@ -149,7 +147,7 @@ bool Program::build(const char *options, list<Header> headers)
   args.push_back("-O0");
 
   bool optimize = true;
-  bool cl12     = true;
+  const char *clstd = NULL;
 
   // Add OpenCL build options
   const char *mainOptions = options;
@@ -182,11 +180,7 @@ bool Program::build(const char *options, list<Header> headers)
       // Check for -cl-std flag
       if (strncmp(opt, "-cl-std=", 8) == 0)
       {
-        if (strcmp(opt+8, "CL1.2") != 0)
-        {
-          cl12 = false;
-          args.push_back(opt);
-        }
+        clstd = opt;
         continue;
       }
 
@@ -194,15 +188,20 @@ bool Program::build(const char *options, list<Header> headers)
     }
   }
 
-  if (cl12)
+  if (!clstd)
   {
-    args.push_back("-cl-std=CL1.2");
+    clstd = "-cl-std=CL1.2";
   }
+  else if (!strcmp(clstd, "-cl-std=CL2.0"))
+  {
+    args.push_back("-fblocks");
+  }
+  args.push_back(clstd);
 
   // Pre-compiled header
   char *pchdir = NULL;
   char *pch    = NULL;
-  if (!checkEnv("OCLGRIND_DISABLE_PCH") && cl12)
+  if (!checkEnv("OCLGRIND_DISABLE_PCH") && !strcmp(clstd, "-cl-std=CL1.2"))
   {
     const char *pchdirOverride = getenv("OCLGRIND_PCH_DIR");
     if (pchdirOverride)

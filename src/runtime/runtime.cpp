@@ -47,6 +47,8 @@ using namespace std;
 #define DEVICE_EXTENSIONS    "         \
   cl_khr_spir                          \
   cl_khr_3d_image_writes               \
+  cl_khr_image2d_from_buffer           \
+  cl_khr_depth_images                  \
   cl_khr_global_int32_base_atomics     \
   cl_khr_global_int32_extended_atomics \
   cl_khr_local_int32_base_atomics      \

@@ -50,6 +50,8 @@ TYPEDEF_VECTOR(double);
   __attribute__((work_group_size_hint(X, 1, 1)))                \
   __attribute__((vec_type_hint(typen)))
 
+#define NULL ((void*)(0))
+
 #define CHAR_BIT    8
 #define SCHAR_MAX 127
 #define SCHAR_MIN (-128)

@@ -58,7 +58,7 @@ set(CLANG ${LLVM_TOOLS_BINARY_DIR}/clang)
 # Get LLVM libraries for linking
 llvm_map_components_to_libnames(LLVM_LIBS
   bitreader bitwriter core instrumentation ipo irreader
-  linker mcparser objcarcopts option)
+  linker mcparser objcarcopts option target)
 
 
 # Check for GNU readline library
@@ -138,7 +138,9 @@ add_library(oclgrind ${CORE_LIB_TYPE}
   src/plugins/MemCheck.h
   src/plugins/MemCheck.cpp
   src/plugins/RaceDetector.h
-  src/plugins/RaceDetector.cpp)
+  src/plugins/RaceDetector.cpp
+  src/plugins/Uninitialized.h
+  src/plugins/Uninitialized.cpp)
 target_link_libraries(oclgrind ${CORE_EXTRA_LIBS}
   clangAnalysis clangAST clangBasic clangCodeGen clangDriver clangEdit
   clangFrontend clangLex clangParse clangSema clangSerialization
@@ -317,9 +319,10 @@ if (PYTHONINTERP_FOUND)
     data-race/intragroup_hidden_race
     PROPERTIES WILL_FAIL TRUE)
 
-else()
-  message(WARNING "Kernel tests will not be run (Python required)")
-endif()
+  # Add app and runtime tests
+  add_subdirectory(tests/apps)
+  add_subdirectory(tests/runtime)
 
-# Add app tests
-add_subdirectory(tests/apps)
+else()
+  message(WARNING "Tests will not be run (Python required)")
+endif()

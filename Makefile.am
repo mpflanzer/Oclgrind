@@ -20,7 +20,7 @@ endif USING_CLANG
 lib_LTLIBRARIES = liboclgrind.la liboclgrind-rt.la liboclgrind-rt-icd.la
 
 LLVM_LIBS = `$(llvm_config) --system-libs --libs bitreader bitwriter	\
- core instrumentation ipo irreader linker mcparser objcarcopts option`
+ core instrumentation ipo irreader linker mcparser objcarcopts option target`
 
 liboclgrind_la_SOURCES = src/core/common.h src/core/common.cpp		\
  src/core/Context.h src/core/Context.cpp src/core/half.h		\
@@ -35,7 +35,8 @@ liboclgrind_la_SOURCES = src/core/common.h src/core/common.cpp		\
  src/plugins/InteractiveDebugger.cpp src/plugins/Logger.h		\
  src/plugins/Logger.cpp src/plugins/MemCheck.h				\
  src/plugins/MemCheck.cpp src/plugins/RaceDetector.h			\
- src/plugins/RaceDetector.cpp
+ src/plugins/RaceDetector.cpp src/plugins/Uninitialized.h \
+ src/plugins/Uninitialized.cpp
 nodist_liboclgrind_la_SOURCES = src/core/clc_h.cpp config.h
 liboclgrind_la_LDFLAGS = -lclangFrontend -lclangDriver		\
 -lclangSerialization -lclangCodeGen -lclangParse -lclangSema	\
@@ -129,11 +130,18 @@ src/include/oclgrind/clc2.0_64.pch: src/include/oclgrind/clc.h
 		-isysroot $(abs_builddir)/src/include/oclgrind \
 		$< -o $@
 
-check_PROGRAMS = tests/apps/vecadd/vecadd
+check_PROGRAMS = \
+  tests/apps/vecadd/vecadd \
+  tests/runtime/map_buffer
 tests_apps_vecadd_vecadd_LDADD = liboclgrind-rt.la
+tests_runtime_map_buffer_LDADD = liboclgrind-rt.la
 TESTS = $(check_PROGRAMS)
 
+if HAVE_PYTHON
+
 TEST_EXTENSIONS = .sim
+LOG_COMPILER = $(PYTHON)				\
+  $(top_srcdir)/tests/run_test.py
 SIM_LOG_COMPILER = $(PYTHON)				\
   $(top_srcdir)/tests/kernels/run_kernel_test.py	\
   ${abs_top_builddir}/oclgrind-kernel
@@ -141,15 +149,18 @@ AM_TESTS_ENVIRONMENT = \
   export AM_TESTS=1; \
   export OCLGRIND_PCH_DIR=$(abs_builddir)/src/include/oclgrind;
 
-if HAVE_PYTHON
 TESTS += $(KERNEL_TESTS)
 XFAIL_TESTS =							\
 	tests/kernels/atomics/atomic_intergroup_race.sim 	\
 	tests/kernels/data-race/intragroup_hidden_race.sim
+
+clean-local:
+	find tests/ -name '*.out' -exec rm -f {} \;
+
 else
 check-local:
 	@echo
-	@echo "WARNING: Kernel tests skipped (Python required)."
+	@echo "WARNING: Tests will not be run (Python required)."
 	@echo
 endif
 
@@ -157,12 +168,12 @@ EXTRA_DIST = NEWS src/core/gen_clc_h.sh src/core/clc.h			\
  src/runtime/oclgrind src/CL/cl.h src/CL/cl_gl.h src/CL/cl_platform.h	\
  src/CL/cl_ext.h src/CL/cl_gl_ext.h src/CL/cl_egl.h src/CL/cl_d3d10.h	\
  src/CL/cl_d3d11.h src/CL/cl_dx9_media_sharing.h src/CL/opencl.h	\
- CMakeLists.txt tests/apps/CMakeLists.txt cmake_config.h.in		\
- src/core/gen_clc_h.cmake src/runtime/icd.def src/runtime/runtime.def	\
- src/install/INSTALL.darwin src/install/INSTALL.linux			\
- src/install/INSTALL.windows src/install/install.bat			\
- src/install/uninstall.bat src/install/oclgrind-icd.reg			\
+ CMakeLists.txt tests/apps/CMakeLists.txt tests/runtime/CMakeLists.txt	\
+ cmake_config.h.in src/core/gen_clc_h.cmake src/runtime/icd.def		\
+ src/runtime/runtime.def src/install/INSTALL.darwin			\
+ src/install/INSTALL.linux src/install/INSTALL.windows			\
+ src/install/install.bat src/install/uninstall.bat			\
+ src/install/oclgrind-icd.reg tests/run_test.py				\
  tests/kernels/run_kernel_test.py tests/kernels/TESTS			\
  $(KERNEL_TEST_INPUTS)
-CLEANFILES = src/core/clc_h.cpp $(bin_SCRIPTS) $(noinst_SCRIPTS)	\
- $(KERNEL_TEST_OUTPUTS)
+CLEANFILES = src/core/clc_h.cpp $(bin_SCRIPTS) $(noinst_SCRIPTS)

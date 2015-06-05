@@ -36,7 +36,8 @@ namespace oclgrind
     void notifyKernelBegin(const KernelInvocation *kernelInvocation) const;
     void notifyKernelEnd(const KernelInvocation *kernelInvocation) const;
     void notifyMemoryAllocated(const Memory *memory, size_t address,
-                               size_t size, cl_mem_flags flags) const;
+                               size_t size, cl_mem_flags flags,
+                               const uint8_t *initData) const;
     void notifyMemoryAtomicLoad(const Memory *memory, AtomicOp op,
                                 size_t address, size_t size) const;
     void notifyMemoryAtomicStore(const Memory *memory, AtomicOp op,
@@ -44,9 +45,13 @@ namespace oclgrind
     void notifyMemoryDeallocated(const Memory *memory, size_t address) const;
     void notifyMemoryLoad(const Memory *memory, size_t address,
                           size_t size) const;
+    void notifyMemoryMap(const Memory *memory, size_t address,
+                         size_t offset, size_t size, cl_map_flags flags) const;
     void notifyMemoryStore(const Memory *memory, size_t address, size_t size,
                            const uint8_t *storeData) const;
     void notifyMessage(MessageType type, const char *message) const;
+    void notifyMemoryUnmap(const Memory *memory, size_t address,
+                           void *ptr) const;
     void notifyWorkGroupBarrier(const WorkGroup *workGroup,
                                 uint32_t flags) const;
     void notifyWorkGroupBegin(const WorkGroup *workGroup) const;

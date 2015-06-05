@@ -39,7 +39,8 @@ Memory::~Memory()
   clear();
 }
 
-size_t Memory::allocateBuffer(size_t size, cl_mem_flags flags)
+size_t Memory::allocateBuffer(size_t size, cl_mem_flags flags,
+                              const uint8_t *initData)
 {
   // Check requested size doesn't exceed maximum
   if (size > MAX_BUFFER_SIZE)
@@ -60,9 +61,6 @@ size_t Memory::allocateBuffer(size_t size, cl_mem_flags flags)
   buffer->flags  = flags;
   buffer->data   = new unsigned char[size];
 
-  // Initialize contents to 0
-  memset(buffer->data, 0, size);
-
   if (b >= m_memory.size())
   {
     m_memory.push_back(buffer);
@@ -74,9 +72,15 @@ size_t Memory::allocateBuffer(size_t size, cl_mem_flags flags)
 
   m_totalAllocated += size;
 
+  // Initialize contents of buffer
+  if (initData)
+    memcpy(buffer->data, initData, size);
+  else
+    memset(buffer->data, 0, size);
+
   size_t address = ((size_t)b) << NUM_ADDRESS_BITS;
 
-  m_context->notifyMemoryAllocated(this, address, size, flags);
+  m_context->notifyMemoryAllocated(this, address, size, flags, initData);
 
   return address;
 }
@@ -200,35 +204,6 @@ void Memory::clear()
   m_totalAllocated = 0;
 }
 
-Memory* Memory::clone() const
-{
-  Memory *mem = new Memory(m_addressSpace, m_context);
-
-  // Clone buffers
-  mem->m_memory.resize(m_memory.size());
-  mem->m_memory[0] = NULL;
-  for (unsigned i = 1; i < m_memory.size(); i++)
-  {
-    Buffer *src = m_memory[i];
-    Buffer *dst = new Buffer;
-    dst->size   = src->size;
-    dst->flags  = src->flags,
-    dst->data   =
-      (src->flags&CL_MEM_USE_HOST_PTR) ?
-        src->data : new unsigned char[src->size],
-    memcpy(dst->data, src->data, src->size);
-    mem->m_memory[i] = dst;
-    m_context->notifyMemoryAllocated(mem, ((size_t)i<<NUM_ADDRESS_BITS),
-                                     src->size, src->flags);
-  }
-
-  // Clone state
-  mem->m_freeBuffers = m_freeBuffers;
-  mem->m_totalAllocated = m_totalAllocated;
-
-  return mem;
-}
-
 size_t Memory::createHostBuffer(size_t size, void *ptr, cl_mem_flags flags)
 {
   // Check requested size doesn't exceed maximum
@@ -263,7 +238,7 @@ size_t Memory::createHostBuffer(size_t size, void *ptr, cl_mem_flags flags)
 
   size_t address = ((size_t)b) << NUM_ADDRESS_BITS;
 
-  m_context->notifyMemoryAllocated(this, address, size, flags);
+  m_context->notifyMemoryAllocated(this, address, size, flags, (uint8_t*)ptr);
 
   return address;
 }

@@ -1,4 +1,4 @@
-// RaceDetector.h (Oclgrind)
+// Uninitialized.h (Oclgrind)
 // Copyright (c) 2013-2015, James Price and Simon McIntosh-Smith,
 // University of Bristol. All rights reserved.
 //
@@ -10,13 +10,14 @@
 
 namespace oclgrind
 {
-  class RaceDetector : public Plugin
+  class Uninitialized : public Plugin
   {
   public:
-    RaceDetector(const Context *context);
+    Uninitialized(const Context *context);
 
-    virtual void kernelBegin(const KernelInvocation *kernelInvocation) override;
-    virtual void kernelEnd(const KernelInvocation *kernelInvocation) override;
+    virtual void hostMemoryStore(const Memory *memory,
+                                 size_t address, size_t size,
+                                 const uint8_t *storeData) override;
     virtual void memoryAllocated(const Memory *memory, size_t address,
                                  size_t size, cl_mem_flags flags,
                                  const uint8_t *initData) override;
@@ -29,6 +30,9 @@ namespace oclgrind
                                    AtomicOp op,
                                    size_t address, size_t size) override;
     virtual void memoryDeallocated(const Memory *memory, size_t address);
+    virtual void memoryMap(const Memory *memory, size_t address,
+                           size_t offset, size_t size,
+                           cl_map_flags flags) override;
     virtual void memoryLoad(const Memory *memory, const WorkItem *workItem,
                             size_t address, size_t size) override;
     virtual void memoryLoad(const Memory *memory, const WorkGroup *workGroup,
@@ -39,57 +43,14 @@ namespace oclgrind
     virtual void memoryStore(const Memory *memory, const WorkGroup *workGroup,
                              size_t address, size_t size,
                              const uint8_t *storeData) override;
-    virtual void workGroupBarrier(const WorkGroup *workGroup,
-                                  uint32_t flags) override;
-
-    virtual bool isThreadSafe() const override;
 
   private:
-    struct State
-    {
-      const llvm::Instruction *instruction;
-      size_t workItem;
-      size_t workGroup;
-      bool canAtomicLoad;
-      bool canAtomicStore;
-      bool canLoad;
-      bool canStore;
-      bool wasWorkItem;
-
-      State();
-    };
-
-    // Enumeration for types of data-race
-    enum DataRaceType
-    {
-      ReadWriteRace,
-      WriteWriteRace
-    };
-
-    typedef std::map<
-                      std::pair<const Memory*, size_t>,
-                      std::pair<State*, size_t>
-                    > StateMap;
+    typedef std::map< std::pair<const Memory*, size_t>, bool* > StateMap;
     StateMap m_state;
 
-    bool m_allowUniformWrites;
-    const KernelInvocation *m_kernelInvocation;
+    void checkState(const Memory *memory, size_t address, size_t size) const;
+    void setState(const Memory *memory, size_t address, size_t size);
 
-    void logRace(DataRaceType type,
-                 unsigned int addrSpace,
-                 size_t address,
-                 size_t lastWorkGroup,
-                 size_t lastWorkItem,
-                 const llvm::Instruction *lastInstruction) const;
-    void registerAtomic(const Memory *memory,
-                        const WorkItem *workItem,
-                        size_t address, size_t size,
-                        bool store);
-    void registerLoadStore(const Memory *memory,
-                           const WorkItem *workItem,
-                           const WorkGroup *workGroup,
-                           size_t address, size_t size,
-                           const uint8_t *storeData);
-    void synchronize(const Memory *memory, bool workGroup);
+    void logError(unsigned int addrSpace, size_t address) const;
   };
 }

@@ -33,6 +33,7 @@
 #include "plugins/Logger.h"
 #include "plugins/MemCheck.h"
 #include "plugins/RaceDetector.h"
+#include "plugins/Uninitialized.h"
 
 using namespace oclgrind;
 using namespace std;
@@ -78,6 +79,9 @@ void Context::loadPlugins()
 
   if (checkEnv("OCLGRIND_DATA_RACES"))
     m_plugins.push_back(make_pair(new RaceDetector(this), true));
+
+  if (checkEnv("OCLGRIND_UNINITIALIZED"))
+    m_plugins.push_back(make_pair(new Uninitialized(this), true));
 
   if (checkEnv("OCLGRIND_INTERACTIVE"))
     m_plugins.push_back(make_pair(new InteractiveDebugger(this), true));
@@ -221,9 +225,10 @@ void Context::notifyKernelEnd(const KernelInvocation *kernelInvocation) const
 }
 
 void Context::notifyMemoryAllocated(const Memory *memory, size_t address,
-                                    size_t size, cl_mem_flags flags) const
+                                    size_t size, cl_mem_flags flags,
+                                    const uint8_t *initData) const
 {
-  NOTIFY(memoryAllocated, memory, address, size, flags);
+  NOTIFY(memoryAllocated, memory, address, size, flags, initData);
 }
 
 void Context::notifyMemoryAtomicLoad(const Memory *memory, AtomicOp op,
@@ -274,6 +279,13 @@ void Context::notifyMemoryLoad(const Memory *memory, size_t address,
   }
 }
 
+void Context::notifyMemoryMap(const Memory *memory, size_t address,
+                              size_t offset, size_t size,
+                              cl_mem_flags flags) const
+{
+  NOTIFY(memoryMap, memory, address, offset, size, flags);
+}
+
 void Context::notifyMemoryStore(const Memory *memory, size_t address,
                                 size_t size, const uint8_t *storeData) const
 {
@@ -299,6 +311,12 @@ void Context::notifyMemoryStore(const Memory *memory, size_t address,
 void Context::notifyMessage(MessageType type, const char *message) const
 {
   NOTIFY(log, type, message);
+}
+
+void Context::notifyMemoryUnmap(const Memory *memory, size_t address,
+                                void *ptr) const
+{
+  NOTIFY(memoryUnmap, memory, address, ptr);
 }
 
 void Context::notifyWorkGroupBarrier(const WorkGroup *workGroup,

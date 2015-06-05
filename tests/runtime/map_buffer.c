@@ -6,7 +6,6 @@
 
 #define TOL 1e-8
 #define MAX_ERRORS 8
-#define MAX_PLATFORMS 8
 
 const char *KERNEL_SOURCE =
 "kernel void vecadd(global float *a, \n"
@@ -36,18 +35,6 @@ int main(int argc, char *argv[])
   if (argc > 1)
   {
     N = atoi(argv[1]);
-  }
-
-  size_t global = N;
-  if (argc > 2)
-  {
-    global = atoi(argv[2]);
-  }
-
-  if (!N || !global)
-  {
-    printf("Usage: ./vecadd N [GLOBAL_SIZE]\n");
-    exit(1);
   }
 
   err = clGetPlatformIDs(1, &platform, NULL);
@@ -93,10 +80,21 @@ int main(int argc, char *argv[])
 
   size_t dataSize = N*sizeof(cl_float);
 
-  // Initialise host data
+  d_a = clCreateBuffer(context, CL_MEM_READ_ONLY, dataSize, NULL, &err);
+  checkError(err, "creating d_a buffer");
+  d_b = clCreateBuffer(context, CL_MEM_READ_ONLY, dataSize, NULL, &err);
+  checkError(err, "creating d_b buffer");
+  d_c = clCreateBuffer(context, CL_MEM_WRITE_ONLY, dataSize, NULL, &err);
+  checkError(err, "creating d_c buffer");
+
+  // Initialise data
   srand(0);
-  h_a = malloc(dataSize);
-  h_b = malloc(dataSize);
+  h_a = clEnqueueMapBuffer(queue, d_a, CL_TRUE, CL_MAP_WRITE_INVALIDATE_REGION,
+                           0, dataSize, 0, NULL, NULL, &err);
+  checkError(err, "mapping d_a buffer");
+  h_b = clEnqueueMapBuffer(queue, d_b, CL_TRUE, CL_MAP_WRITE_INVALIDATE_REGION,
+                           0, dataSize, 0, NULL, NULL, &err);
+  checkError(err, "mapping d_b buffer");
   h_c = malloc(dataSize);
   for (unsigned i = 0; i < N; i++)
   {
@@ -105,22 +103,10 @@ int main(int argc, char *argv[])
     h_c[i] = 0;
   }
 
-  d_a = clCreateBuffer(context, CL_MEM_READ_ONLY, dataSize, NULL, &err);
-  checkError(err, "creating d_a buffer");
-  d_b = clCreateBuffer(context, CL_MEM_READ_ONLY, dataSize, NULL, &err);
-  checkError(err, "creating d_b buffer");
-  d_c = clCreateBuffer(context, CL_MEM_WRITE_ONLY, dataSize, NULL, &err);
-  checkError(err, "creating d_c buffer");
-
-  err = clEnqueueWriteBuffer(queue, d_a, CL_FALSE,
-                             0, dataSize, h_a, 0, NULL, NULL);
-  checkError(err, "writing d_a data");
-  err = clEnqueueWriteBuffer(queue, d_b, CL_FALSE,
-                             0, dataSize, h_b, 0, NULL, NULL);
-  checkError(err, "writing d_b data");
-  err = clEnqueueWriteBuffer(queue, d_c, CL_FALSE,
-                             0, dataSize, h_c, 0, NULL, NULL);
-  checkError(err, "writing d_c data");
+  err = clEnqueueUnmapMemObject(queue, d_a, h_a, 0, NULL, NULL);
+  checkError(err, "unmapping d_a");
+  err = clEnqueueUnmapMemObject(queue, d_b, h_b, 0, NULL, NULL);
+  checkError(err, "unmapping d_b");
 
   err  = clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_a);
   err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &d_b);
@@ -128,15 +114,15 @@ int main(int argc, char *argv[])
   checkError(err, "setting kernel args");
 
   err = clEnqueueNDRangeKernel(queue, kernel,
-                               1, NULL, &global, NULL, 0, NULL, NULL);
+                               1, NULL, &N, NULL, 0, NULL, NULL);
   checkError(err, "enqueuing kernel");
+
+  h_c = clEnqueueMapBuffer(queue, d_c, CL_FALSE, CL_MAP_READ, 0, dataSize,
+                           0, NULL, NULL, &err);
+  checkError(err, "mapping d_c buffer");
 
   err = clFinish(queue);
   checkError(err, "running kernel");
-
-  err = clEnqueueReadBuffer(queue, d_c, CL_TRUE,
-                            0, dataSize, h_c, 0, NULL, NULL);
-  checkError(err, "reading d_c data");
 
   // Check results
   unsigned errors = 0;
@@ -155,9 +141,9 @@ int main(int argc, char *argv[])
   if (errors)
     printf("%d errors detected\n", errors);
 
-  free(h_a);
-  free(h_b);
-  free(h_c);
+  clEnqueueUnmapMemObject(queue, d_c, h_c, 0, NULL, NULL);
+  checkError(err, "unmapping d_c");
+
   clReleaseMemObject(d_a);
   clReleaseMemObject(d_b);
   clReleaseMemObject(d_c);

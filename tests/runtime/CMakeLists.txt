@@ -6,11 +6,11 @@
 # license terms please see the LICENSE file distributed with this
 # source code.
 
-# Add app tests
+# Add runtime tests
 foreach(test
-  vecadd)
+  map_buffer)
 
-  add_executable(${test} ${test}/${test}.c)
+  add_executable(${test} ${test}.c)
   target_link_libraries(${test} oclgrind-rt)
 
   # Generate test binaries in same dir as Oclgrind libraries on Windows
@@ -18,20 +18,19 @@ foreach(test
     set_target_properties(${test} PROPERTIES
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
   else()
-    set_target_properties(${test} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${test}")
     set_target_properties(${test} PROPERTIES LINKER_LANGUAGE CXX)
   endif()
 
   add_test(
-    NAME app_${test}
+    NAME rt_${test}
     COMMAND
     ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/run_test.py
     $<TARGET_FILE:${test}>)
 
-  set_tests_properties(app_${test} PROPERTIES DEPENDS ${test})
+  set_tests_properties(rt_${test} PROPERTIES DEPENDS ${test})
 
   # Set PCH directory
-  set_tests_properties(app_${test} PROPERTIES
+  set_tests_properties(rt_${test} PROPERTIES
       ENVIRONMENT "OCLGRIND_PCH_DIR=${CMAKE_BINARY_DIR}/include/oclgrind")
 
 endforeach(${test})

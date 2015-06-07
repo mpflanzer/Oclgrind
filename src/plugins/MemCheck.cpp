@@ -47,7 +47,7 @@ void MemCheck::instructionExecuted(const WorkItem *workItem,
           info << "Index ("
                << index << ") exceeds static array size ("
                << size << ")";
-          m_context->logError(info.str().c_str());
+          m_context->logError(info.str().c_str(), ERROR_ARRAY_BOUNDS);
         }
 
         ptrType = ptrType->getArrayElementType();
@@ -145,7 +145,7 @@ void MemCheck::checkLoad(const Memory *memory,
 
   if (memory->getBuffer(address)->flags & CL_MEM_WRITE_ONLY)
   {
-    m_context->logError("Invalid read from write-only buffer");
+    m_context->logError("Invalid read from write-only buffer", ERROR_INVALID_ACCESS);
   }
 
   // Check if memory location is currently mapped for writing
@@ -173,7 +173,7 @@ void MemCheck::checkStore(const Memory *memory,
 
   if (memory->getBuffer(address)->flags & CL_MEM_READ_ONLY)
   {
-    m_context->logError("Invalid write to read-only buffer");
+    m_context->logError("Invalid write to read-only buffer", ERROR_INVALID_ACCESS);
   }
 
   // Check if memory location is currently mapped
@@ -192,7 +192,7 @@ void MemCheck::checkStore(const Memory *memory,
 void MemCheck::logInvalidAccess(bool read, unsigned addrSpace,
                                 size_t address, size_t size) const
 {
-  Context::Message msg(ERROR, m_context);
+  Context::Message msg(ERROR_INVALID_ACCESS, m_context);
   msg << "Invalid " << (read ? "read" : "write")
       << " of size " << size
       << " at " << getAddressSpaceName(addrSpace)

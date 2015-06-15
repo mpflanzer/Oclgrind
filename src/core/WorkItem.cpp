@@ -1116,7 +1116,7 @@ INSTRUCTION(load)
   if (address & (alignment-1))
   {
     m_context->logError("Invalid memory load - source pointer is "
-                        "not aligned to the pointed type", ERROR_UNALIGNED);
+                        "not aligned to the pointed type", OCLGRIND_ERROR_UNALIGNED);
   }
 
   // Load data
@@ -1333,7 +1333,7 @@ INSTRUCTION(store)
   if (address & (alignment-1))
   {
     m_context->logError("Invalid memory store - source pointer is "
-                        "not aligned to the pointed type", ERROR_UNALIGNED);
+                        "not aligned to the pointed type", OCLGRIND_ERROR_UNALIGNED);
   }
 
   // Store data

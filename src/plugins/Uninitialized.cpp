@@ -196,7 +196,7 @@ void Uninitialized::checkState(const Memory *memory,
 
 void Uninitialized::logError(unsigned int addrSpace, size_t address) const
 {
-  Context::Message msg(WARNING_UNINITIALIZED, m_context);
+  Context::Message msg(OCLGRIND_WARNING_UNINITIALIZED, m_context);
   msg << "Uninitialized value read from "
       << getAddressSpaceName(addrSpace)
       << " memory address 0x" << hex << address << endl

@@ -280,7 +280,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_add", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_add", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicAdd, address, UARG(1));
       result.setUInt(old);
@@ -294,7 +294,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_and", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_and", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicAnd, address, UARG(1));
       result.setUInt(old);
@@ -308,7 +308,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_cmpxchg", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_cmpxchg", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomicCmpxchg(address, UARG(1), UARG(2));
       result.setUInt(old);
@@ -322,7 +322,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_dec", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_dec", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicDec, address);
       result.setUInt(old);
@@ -336,7 +336,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_dec", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_dec", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicInc, address);
       result.setUInt(old);
@@ -350,7 +350,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_max", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_max", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicMax, address, UARG(1));
       result.setUInt(old);
@@ -364,7 +364,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_min", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_min", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicMin, address, UARG(1));
       result.setUInt(old);
@@ -378,7 +378,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_or", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_or", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicOr, address, UARG(1));
       result.setUInt(old);
@@ -392,7 +392,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_sub", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_sub", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicSub, address, UARG(1));
       result.setUInt(old);
@@ -406,7 +406,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_xchg", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_xchg", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicXchg, address, UARG(1));
       result.setUInt(old);
@@ -420,7 +420,7 @@ namespace oclgrind
       size_t address = PARG(0);
       // Verify the address is 4-byte aligned
       if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_xor", ERROR_UNALIGNED);
+        workItem->m_context->logError("Unaligned address on atomic_xor", OCLGRIND_ERROR_UNALIGNED);
       }
       uint32_t old = memory->atomic(AtomicXor, address, UARG(1));
       result.setUInt(old);

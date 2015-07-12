@@ -12,6 +12,7 @@ set(Oclgrind_VERSION_MAJOR 15)
 set(Oclgrind_VERSION_MINOR 5)
 
 include(CheckIncludeFiles)
+include(CheckIncludeFileCXX)
 include(CheckLibraryExists)
 
 # Enable C99 for GCC (required for tests)
@@ -53,12 +54,55 @@ set(LLVM_VERSION ${LLVM_VERSION_MAJOR}${LLVM_VERSION_MINOR})
 add_definitions(${LLVM_DEFINITIONS})
 include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
-set(CLANG ${LLVM_TOOLS_BINARY_DIR}/clang)
 
 # Get LLVM libraries for linking
 llvm_map_components_to_libnames(LLVM_LIBS
   bitreader bitwriter core instrumentation ipo irreader
   linker mcparser objcarcopts option target)
+
+
+# Allow user to set path to Clang installation via CLANG_ROOT
+set (CLANG_ROOT " " CACHE PATH "Root of Clang installation")
+if (NOT ${CLANG_ROOT} STREQUAL " ")
+  include_directories("${CLANG_ROOT}/include")
+  link_directories("${CLANG_ROOT}/lib")
+  set(CMAKE_REQUIRED_INCLUDES
+      "${CMAKE_REQUIRED_INCLUDES};${CLANG_ROOT}/include")
+endif()
+
+set(CMAKE_REQUIRED_INCLUDES
+    "${CMAKE_REQUIRED_INCLUDES};${LLVM_INCLUDE_DIRS}")
+set(CMAKE_REQUIRED_DEFINITIONS
+    "${CMAKE_REQUIRED_DEFINITIONS};${LLVM_DEFINITIONS}")
+
+# Check for Clang headers
+unset(CLANG_HEADER CACHE)
+find_path(CLANG_HEADER "clang/CodeGen/CodeGenAction.h"
+          PATHS "${CLANG_ROOT}/include" "${LLVM_INCLUDE_DIRS}"
+          NO_DEFAULT_PATH)
+find_path(CLANG_HEADER "clang/CodeGen/CodeGenAction.h")
+if ("${CLANG_HEADER}" STREQUAL "CLANG_HEADER-NOTFOUND")
+  message(FATAL_ERROR "Clang headers not found (set CLANG_ROOT)")
+endif()
+
+# Check for Clang libraries
+unset(CLANG_LIB CACHE)
+find_library(CLANG_LIB "clangFrontend"
+             PATHS "${CLANG_ROOT}/lib" "${LLVM_LIBRARY_DIRS}"
+             NO_DEFAULT_PATH)
+find_library(CLANG_LIB "clangFrontend")
+if ("${CLANG_LIB}" STREQUAL "CLANG_LIB-NOTFOUND")
+  message(FATAL_ERROR "Clang libraries not found (set CLANG_ROOT)")
+endif()
+
+# Check for clang
+find_program(CLANG clang
+             PATHS "${CLANG_ROOT}/bin" "${LLVM_TOOLS_BINARY_DIR}"
+             NO_DEFAULT_PATH)
+find_program(CLANG clang)
+if ("${CLANG}" STREQUAL "CLANG-NOTFOUND")
+  message(FATAL_ERROR "Could not find clang binary")
+endif()
 
 
 # Check for GNU readline library
@@ -231,8 +275,8 @@ if (NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
   file(WRITE ${CMAKE_BINARY_DIR}/oclgrind "${OCLGRIND_SCRIPT}")
 
   # Generate ICD loader
-  get_property(OCLGRIND_RT_FILENAME TARGET oclgrind-rt-icd PROPERTY LOCATION)
-  file(WRITE ${CMAKE_BINARY_DIR}/oclgrind.icd "${OCLGRIND_RT_FILENAME}\n")
+  file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/oclgrind.icd
+       CONTENT "$<TARGET_FILE:oclgrind-rt-icd>\n")
 
   install(PROGRAMS
     ${CMAKE_BINARY_DIR}/oclgrind

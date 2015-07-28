@@ -52,7 +52,7 @@ def run(output_suffix):
   out = open(test_out, 'w')
   os.chdir(test_dir)
   retval = subprocess.call([test_exe,
-                            '--data-races', '--uninitialized', '-Wall', test_file],
+                            '--data-races', '--memcheck-uninitialized', '-Wall', test_file],
                            stdout=out, stderr=out)
   out.close()
   if retval != 0:

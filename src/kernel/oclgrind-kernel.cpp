@@ -141,6 +141,15 @@ static bool parseArguments(int argc, char *argv[])
     {
       setEnvironment("OCLGRIND_QUICK", "1");
     }
+    else if (!strcmp(argv[i], "--stop-errors"))
+    {
+      if (++i >= argc)
+      {
+        cerr << "Missing argument to --stop-errors" << endl;
+        return false;
+      }
+      setEnvironment("OCLGRIND_STOP_ERRORS", argv[i]);
+    }
     else if (!strcmp(argv[i], "--uniform-writes"))
     {
       setEnvironment("OCLGRIND_UNIFORM_WRITES", "1");
@@ -242,6 +251,8 @@ static void printUsage()
              "Load colon seperated list of plugin libraries" << endl
     << "  -q --quick                   "
              "Only run first and last work-group" << endl
+    << "     --stop-errors    NUM      "
+             "Abort the execution after NUM error/warning messages" << endl
     << "     --uniform-writes          "
              "Don't suppress uniform write-write data-races" << endl
     << "     --uninitialized           "

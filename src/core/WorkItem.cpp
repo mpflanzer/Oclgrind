@@ -523,7 +523,7 @@ bool WorkItem::printVariable(string name) const
   }
 
   // Get variable value
-  TypedValue result = getValue(value);
+  TypedValue result = getOperand(value);
   const llvm::Type *type = value->getType();
 
   if (value->getValueID() == llvm::Value::GlobalVariableVal ||
@@ -1651,8 +1651,6 @@ bool InterpreterCache::hasValue(const llvm::Value *value) const
 
 void InterpreterCache::addOperand(const llvm::Value *operand)
 {
-  addValueID(operand);
-
   // Resolve constants
   if (operand->getValueID() == llvm::Value::UndefValueVal            ||
       operand->getValueID() == llvm::Value::ConstantAggregateZeroVal ||
@@ -1673,13 +1671,16 @@ void InterpreterCache::addOperand(const llvm::Value *operand)
     const llvm::ConstantExpr *expr = (const llvm::ConstantExpr*)operand;
     if (!m_constExpressions.count(expr))
     {
-      for (llvm::User::const_op_iterator O = expr->op_begin();
-           O != expr->op_end(); O++)
+      for (auto O = expr->op_begin(); O != expr->op_end(); O++)
       {
         addOperand(*O);
       }
       m_constExpressions[expr] = getConstExprAsInstruction(expr);
       // TODO: Resolve actual value?
     }
+  }
+  else
+  {
+    addValueID(operand);
   }
 }

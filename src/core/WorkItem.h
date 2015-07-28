@@ -15,6 +15,7 @@ namespace llvm
   class DbgValueInst;
   class Function;
   class Module;
+  class BasicBlock;
 }
 
 namespace oclgrind
@@ -107,6 +108,7 @@ namespace oclgrind
     size_t getGlobalIndex() const;
     Size3 getLocalID() const;
     TypedValue getOperand(const llvm::Value *operand) const;
+    const llvm::BasicBlock* getPreviousBlock() const;
     Memory* getPrivateMemory() const;
     State getState() const;
     const unsigned char* getValueData(const llvm::Value *value) const;

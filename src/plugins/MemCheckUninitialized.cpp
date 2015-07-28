@@ -1767,7 +1767,7 @@ void MemCheckUninitialized::handleIntrinsicInstruction(const WorkItem *workItem,
 
 void MemCheckUninitialized::logUninitializedWrite(unsigned int addrSpace, size_t address) const
 {
-  Context::Message msg(WARNING, m_context);
+  Context::Message msg(OCLGRIND_WARNING_UNINITIALIZED, m_context);
   msg << "Uninitialized value written to "
       << getAddressSpaceName(addrSpace)
       << " memory address 0x" << hex << address << endl
@@ -1780,7 +1780,7 @@ void MemCheckUninitialized::logUninitializedWrite(unsigned int addrSpace, size_t
 
 void MemCheckUninitialized::logUninitializedCF() const
 {
-  Context::Message msg(WARNING, m_context);
+  Context::Message msg(OCLGRIND_WARNING_UNINITIALIZED, m_context);
   msg << "Controlflow depends on uninitialized value" << endl
       << msg.INDENT
       << "Kernel: " << msg.CURRENT_KERNEL << endl
@@ -1791,7 +1791,7 @@ void MemCheckUninitialized::logUninitializedCF() const
 
 void MemCheckUninitialized::logUninitializedIndex() const
 {
-  Context::Message msg(WARNING, m_context);
+  Context::Message msg(OCLGRIND_WARNING_UNINITIALIZED, m_context);
   msg << "Instruction depends on an uninitialized index value" << endl
       << msg.INDENT
       << "Kernel: " << msg.CURRENT_KERNEL << endl

@@ -370,11 +370,6 @@ Memory* WorkItem::getMemory(unsigned int addrSpace) const
   }
 }
 
-const llvm::BasicBlock* WorkItem::getPreviousBlock() const
-{
-    return m_position->prevBlock;
-}
-
 TypedValue WorkItem::getOperand(const llvm::Value *operand) const
 {
   unsigned valID = operand->getValueID();

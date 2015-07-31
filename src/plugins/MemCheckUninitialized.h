@@ -19,11 +19,11 @@ namespace oclgrind
 {
     typedef std::unordered_map<const llvm::Value*, TypedValue> UnorderedTypedValueMap;
 
-    class ShadowValues
+    class ShadowFrame
     {
         public:
-            ShadowValues();
-            virtual ~ShadowValues();
+            ShadowFrame();
+            virtual ~ShadowFrame();
 
             void dump() const;
             inline const llvm::CallInst* getCall() const
@@ -31,23 +31,70 @@ namespace oclgrind
                 return m_call;
             }
             TypedValue getValue(const llvm::Value *V) const;
+            inline bool hasValue(const llvm::Value* V) const
+            {
+                return llvm::isa<llvm::Constant>(V) || m_values->count(V);
+            }
             inline void setCall(const llvm::CallInst *CI)
             {
                 m_call = CI;
             }
-            inline bool hasValue(const llvm::Value* V) const
-            {
-                return llvm::isa<llvm::Constant>(V) || m_values.count(V);
-            }
-            void loadMemory(unsigned char *dst, size_t address, size_t size=1) const;
             void setValue(const llvm::Value *V, TypedValue SV);
 
         private:
+            typedef std::list<const llvm::Value*> ValuesList;
+
             const llvm::CallInst *m_call;
-            UnorderedTypedValueMap m_values;
+            UnorderedTypedValueMap *m_values;
 #ifdef DUMP_SHADOW
-            std::list<const llvm::Value*> m_valuesList;
+            ValuesList *valuesList;
 #endif
+    };
+
+    class ShadowValues
+    {
+        public:
+            ShadowValues();
+            virtual ~ShadowValues();
+
+            ShadowFrame* createCleanShadowFrame();
+            inline void dump() const
+            {
+                m_stack->top()->dump();
+            }
+            inline const llvm::CallInst* getCall() const
+            {
+                return m_stack->top()->getCall();
+            }
+            inline TypedValue getValue(const llvm::Value *V) const
+            {
+                return m_stack->top()->getValue(V);
+            }
+            inline bool hasValue(const llvm::Value* V) const
+            {
+                return llvm::isa<llvm::Constant>(V) || m_stack->top()->hasValue(V);
+            }
+            inline void popFrame()
+            {
+                m_stack->pop();
+            }
+            inline void pushFrame(ShadowFrame *frame)
+            {
+                m_stack->push(frame);
+            }
+            inline void setCall(const llvm::CallInst *CI)
+            {
+                m_stack->top()->setCall(CI);
+            }
+            inline void setValue(const llvm::Value *V, TypedValue SV)
+            {
+                m_stack->top()->setValue(V, SV);
+            }
+
+        private:
+            typedef std::stack<ShadowFrame*> ShadowValuesStack;
+
+            ShadowValuesStack *m_stack;
     };
 
     class ShadowMemory
@@ -92,70 +139,23 @@ namespace oclgrind
             ShadowWorkItem(unsigned bufferBits);
             virtual ~ShadowWorkItem();
 
-            inline void allocMemory(size_t address, size_t size)
+            inline void dump() const
             {
-                m_memory->allocate(address, size);
-            }
-            ShadowValues* createCleanShadowValues();
-            void dump() const;
-            inline void dumpMemory() const
-            {
+                m_values->dump();
                 m_memory->dump();
-            }
-            inline void dumpValues() const
-            {
-                m_values.top()->dump();
-            }
-            inline const llvm::CallInst* getCall() const
-            {
-                return m_values.top()->getCall();
-            }
-            inline void* getMemoryPointer(size_t address) const
-            {
-                return m_memory->getPointer(address);
             }
             inline ShadowMemory* getPrivateMemory()
             {
                 return m_memory;
             }
-            inline TypedValue getValue(const llvm::Value *V) const
+            inline ShadowValues* getValues() const
             {
-                return m_values.top()->getValue(V);
-            }
-            inline bool hasValue(const llvm::Value* V) const
-            {
-                return m_values.top()->hasValue(V);
-            }
-            inline void loadMemory(unsigned char *dst, size_t address, size_t size=1) const
-            {
-                m_memory->load(dst, address, size);
-            }
-            inline void popValues()
-            {
-                m_values.pop();
-            }
-            inline void pushValues(ShadowValues *values)
-            {
-                m_values.push(values);
-            }
-            inline void setCall(const llvm::CallInst* CI)
-            {
-                m_values.top()->setCall(CI);
-            }
-            inline void setValue(const llvm::Value *V, TypedValue SV)
-            {
-                m_values.top()->setValue(V, SV);
-            }
-            inline void storeMemory(const unsigned char *src, size_t address, size_t size=1)
-            {
-                m_memory->store(src, address, size);
+                return m_values;
             }
 
         private:
-            typedef std::stack<ShadowValues*> ValuesStack;
-
             ShadowMemory *m_memory;
-            ValuesStack m_values;
+            ShadowValues *m_values;
     };
 
     class ShadowWorkGroup
@@ -164,33 +164,13 @@ namespace oclgrind
             ShadowWorkGroup(unsigned bufferBits);
             virtual ~ShadowWorkGroup();
 
-            inline void allocMemory(size_t address, size_t size)
-            {
-                m_memory->allocate(address, size);
-            }
             inline void dump() const
-            {
-                m_memory->dump();
-            }
-            inline void dumpMemory() const
             {
                 m_memory->dump();
             }
             inline ShadowMemory* getLocalMemory()
             {
                 return m_memory;
-            }
-            inline void* getMemoryPointer(size_t address) const
-            {
-                return m_memory->getPointer(address);
-            }
-            inline void loadMemory(unsigned char *dst, size_t address, size_t size=1) const
-            {
-                m_memory->load(dst, address, size);
-            }
-            inline void storeMemory(const unsigned char *src, size_t address, size_t size=1)
-            {
-                m_memory->store(src, address, size);
             }
 
         private:
@@ -243,7 +223,7 @@ namespace oclgrind
             TypedValue getValue(const WorkItem *workItem, const llvm::Value *V) const;
             inline bool hasValue(const WorkItem *workItem, const llvm::Value* V) const
             {
-                return llvm::isa<llvm::Constant>(V) || m_globalValues.count(V) || m_workSpace.workItems->at(workItem)->hasValue(V);
+                return llvm::isa<llvm::Constant>(V) || m_globalValues.count(V) || m_workSpace.workItems->at(workItem)->getValues()->hasValue(V);
             }
             static bool isCleanStruct(ShadowMemory *shadowMemory, size_t address, const llvm::StructType *structTy);
             static bool isCleanValue(TypedValue v);
@@ -272,19 +252,19 @@ namespace oclgrind
             MemCheckUninitialized(const Context *context);
             virtual ~MemCheckUninitialized();
 
-            virtual void kernelBegin(const KernelInvocation *kernelInvocation) override;
-            virtual void workItemBegin(const WorkItem *workItem) override;
-            virtual void workItemComplete(const WorkItem *workItem);
-            virtual void workGroupBegin(const WorkGroup *workGroup);
-            virtual void workGroupComplete(const WorkGroup *workGroup);
             virtual void hostMemoryStore(const Memory *memory,
                     size_t address, size_t size,
-                    const uint8_t *storeData);
+                    const uint8_t *storeData) override;
             virtual void instructionExecuted(const WorkItem *workItem,
                     const llvm::Instruction *instruction,
                     const TypedValue& result) override;
+            virtual void kernelBegin(const KernelInvocation *kernelInvocation) override;
             virtual void memoryMap(const Memory *memory, size_t address,
-                    size_t offset, size_t size, cl_map_flags flags);
+                    size_t offset, size_t size, cl_map_flags flags) override;
+            virtual void workItemBegin(const WorkItem *workItem) override;
+            virtual void workItemComplete(const WorkItem *workItem) override;
+            virtual void workGroupBegin(const WorkGroup *workGroup) override;
+            virtual void workGroupComplete(const WorkGroup *workGroup) override;
             //virtual void memoryAllocated(const Memory *memory, size_t address,
             //                             size_t size, cl_mem_flags flags,
             //                             const uint8_t *initData);
@@ -306,21 +286,17 @@ namespace oclgrind
                                          size_t num, size_t stride, unsigned size,
                                          const WorkItem *workItem = NULL, const WorkGroup *workGroup = NULL, bool unchecked = false);
             static std::string extractUnmangledName(const std::string fullname);
-            Memory* getMemory(unsigned addrSpace, const WorkItem *workItem = NULL, const WorkGroup *workGroup = NULL) const;
             ShadowMemory* getShadowMemory(unsigned addrSpace, const WorkItem *workItem = NULL, const WorkGroup *workGroup = NULL) const;
             bool handleBuiltinFunction(const WorkItem *workItem, std::string name, const llvm::CallInst *CI, const TypedValue result);
             void handleIntrinsicInstruction(const WorkItem *workItem, const llvm::IntrinsicInst *I);
-
             void loadShadowMemory(unsigned addrSpace, size_t address, TypedValue &SM,
                                   const WorkItem *workItem = NULL, const WorkGroup *workGroup = NULL);
-            void storeShadowMemory(unsigned addrSpace, size_t address, TypedValue SM,
-                                   const WorkItem *workItem = NULL, const WorkGroup *workGroup = NULL, bool unchecked = false);
-
-            void SimpleOr(const WorkItem *workItem, const llvm::Instruction *I);
-            void SimpleOrAtomic(const WorkItem *workItem, const llvm::CallInst *CI);
-
             void logUninitializedWrite(unsigned int addrSpace, size_t address) const;
             void logUninitializedCF() const;
             void logUninitializedIndex() const;
+            void SimpleOr(const WorkItem *workItem, const llvm::Instruction *I);
+            void SimpleOrAtomic(const WorkItem *workItem, const llvm::CallInst *CI);
+            void storeShadowMemory(unsigned addrSpace, size_t address, TypedValue SM,
+                                   const WorkItem *workItem = NULL, const WorkGroup *workGroup = NULL, bool unchecked = false);
     };
 }

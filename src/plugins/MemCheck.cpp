@@ -29,42 +29,25 @@ void MemCheck::instructionExecuted(const WorkItem *workItem,
                                    const llvm::Instruction *instruction,
                                    const TypedValue& result)
 {
-  if (auto gep = llvm::dyn_cast<llvm::GetElementPtrInst>(instruction))
+  // Check static array bounds if load or store is executed
+  const llvm::Value *PtrOp = nullptr;
+
+  if (auto LI = llvm::dyn_cast<llvm::LoadInst>(instruction))
   {
-    // Iterate through GEP indices
-    const llvm::Type *ptrType = gep->getPointerOperandType();
-    for (auto opIndex = gep->idx_begin(); opIndex != gep->idx_end(); opIndex++)
-    {
-      int64_t index = workItem->getOperand(opIndex->get()).getSInt();
+    PtrOp = LI->getPointerOperand();
+  }
+  else if (auto SI = llvm::dyn_cast<llvm::StoreInst>(instruction))
+  {
+    PtrOp = SI->getPointerOperand();
+  }
+  else
+  {
+    return;
+  }
 
-      if (ptrType->isArrayTy())
-      {
-        // Check index doesn't exceed size of array
-        uint64_t size = ptrType->getArrayNumElements();
-        if ((uint64_t)index >= size)
-        {
-          ostringstream info;
-          info << "Index ("
-               << index << ") exceeds static array size ("
-               << size << ")";
-          m_context->logError(info.str().c_str(), OCLGRIND_ERROR_ARRAY_BOUNDS);
-        }
-
-        ptrType = ptrType->getArrayElementType();
-      }
-      else if (ptrType->isPointerTy())
-      {
-        ptrType = ptrType->getPointerElementType();
-      }
-      else if (ptrType->isVectorTy())
-      {
-        ptrType = ptrType->getVectorElementType();
-      }
-      else if (ptrType->isStructTy())
-      {
-        ptrType = ptrType->getStructElementType(index);
-      }
-    }
+  if (auto GEPI = llvm::dyn_cast<llvm::GetElementPtrInst>(PtrOp))
+  {
+    checkArrayAccess(workItem, GEPI);
   }
 }
 
@@ -130,6 +113,47 @@ void MemCheck::memoryUnmap(const Memory *memory, size_t address,
     {
       m_mapRegions.erase(region);
       return;
+    }
+  }
+}
+
+void MemCheck::checkArrayAccess(const WorkItem *workItem,
+                                const llvm::GetElementPtrInst *GEPI) const
+{
+  // Iterate through GEPI indices
+  const llvm::Type *ptrType = GEPI->getPointerOperandType();
+
+  for (auto opIndex = GEPI->idx_begin(); opIndex != GEPI->idx_end(); opIndex++)
+  {
+    int64_t index = workItem->getOperand(opIndex->get()).getSInt();
+
+    if (ptrType->isArrayTy())
+    {
+      // Check index doesn't exceed size of array
+      uint64_t size = ptrType->getArrayNumElements();
+
+      if ((uint64_t)index >= size)
+      {
+        ostringstream info;
+        info << "Index ("
+             << index << ") exceeds static array size ("
+             << size << ")";
+        m_context->logError(info.str().c_str());
+      }
+
+      ptrType = ptrType->getArrayElementType();
+    }
+    else if (ptrType->isPointerTy())
+    {
+      ptrType = ptrType->getPointerElementType();
+    }
+    else if (ptrType->isVectorTy())
+    {
+      ptrType = ptrType->getVectorElementType();
+    }
+    else if (ptrType->isStructTy())
+    {
+      ptrType = ptrType->getStructElementType(index);
     }
   }
 }

@@ -8,6 +8,7 @@
 
 #include "common.h"
 #include <algorithm>
+#include <float.h>
 #include <fenv.h>
 #include <mutex>
 
@@ -646,6 +647,39 @@ namespace oclgrind
       result.setFloat(r);
     }
 
+    static double geometric_length(double *values, unsigned num)
+    {
+      double lengthSq = 0.0;
+      for (unsigned i = 0; i < num; i++)
+      {
+        lengthSq += values[i] * values[i];
+      }
+
+      // Check for overflow/underflow
+      double rescale = 1.0;
+      if (lengthSq == INFINITY)
+      {
+        rescale = ldexp(1.0, -512);
+      }
+      else if (lengthSq < num*DBL_MIN/DBL_EPSILON)
+      {
+        rescale = ldexp(1.0, 640);
+      }
+
+      if (rescale != 1.0)
+      {
+        // Re-do calculations with a rescaling multiplier
+        lengthSq = 0.0;
+        for (unsigned i = 0; i < num; i++)
+        {
+          double f = values[i] * rescale;
+          lengthSq += f*f;
+        }
+      }
+
+      return sqrt(lengthSq) * (1.0/rescale);
+    }
+
     DEFINE_BUILTIN(distance)
     {
       unsigned num = 1;
@@ -654,13 +688,12 @@ namespace oclgrind
         num = ARG(0)->getType()->getVectorNumElements();
       }
 
-      double distSq = 0.0;
+      double values[4];
       for (unsigned i = 0; i < num; i++)
       {
-        double diff = FARGV(0,i) - FARGV(1,i);
-        distSq += diff*diff;
+        values[i] = FARGV(0, i) - FARGV(1, i);
       }
-      result.setFloat(sqrt(distSq));
+      result.setFloat(geometric_length(values, num));
     }
 
     DEFINE_BUILTIN(length)
@@ -671,26 +704,79 @@ namespace oclgrind
         num = ARG(0)->getType()->getVectorNumElements();
       }
 
-      double lengthSq = 0.0;
+      double values[4];
       for (unsigned i = 0; i < num; i++)
       {
-        lengthSq += FARGV(0, i) * FARGV(0, i);
+        values[i] = FARGV(0, i);
       }
-      result.setFloat(sqrt(lengthSq));
+      result.setFloat(geometric_length(values, num));
     }
 
     DEFINE_BUILTIN(normalize)
     {
+      double values[4];
       double lengthSq = 0.0;
       for (unsigned i = 0; i < result.num; i++)
       {
-        lengthSq += FARGV(0, i) * FARGV(0, i);
+        values[i] = FARGV(0, i);
+        lengthSq += values[i] * values[i];
       }
-      double length = sqrt(lengthSq);
 
+      if (lengthSq == INFINITY)
+      {
+        // Re-do calculations with a rescaling multiplier
+        lengthSq = 0.0;
+        double rescale = ldexp(1.0, -512);
+        for (unsigned i = 0; i < result.num; i++)
+        {
+          values[i] = values[i] * rescale;
+          lengthSq += values[i] * values[i];
+        }
+
+        if (lengthSq == INFINITY)
+        {
+          // Infinities in input, set all other values to 0
+          lengthSq = 0.0;
+          for (unsigned i = 0; i < result.num; i++)
+          {
+            if (::isinf(values[i]))
+            {
+              values[i] = copysign(1.0, FARGV(0, i));
+              lengthSq += 1.0;
+            }
+            else
+            {
+              values[i] = copysign(0.0, FARGV(0, i));
+            }
+          }
+        }
+      }
+      else if (lengthSq < result.num*DBL_MIN/DBL_EPSILON)
+      {
+        // Re-do calculations with a rescaling multiplier
+        lengthSq = 0.0;
+        double rescale = ldexp(1.0, 640);
+        for (unsigned i = 0; i < result.num; i++)
+        {
+          values[i] = values[i] * rescale;
+          lengthSq += values[i] * values[i];
+        }
+
+        if (lengthSq == 0.0)
+        {
+          // Zeros in input, copy vector unchanged
+          for (unsigned i = 0; i < result.num; i++)
+          {
+            result.setFloat(FARGV(0, i), i);
+          }
+          return;
+        }
+      }
+
+      double length = sqrt(lengthSq);
       for (unsigned i = 0; i < result.num; i++)
       {
-        result.setFloat(FARGV(0, i)/length, i);
+        result.setFloat(values[i]/length, i);
       }
     }
 
@@ -2239,9 +2325,15 @@ namespace oclgrind
     static double _sinpi_(double x){ return (sin(x * M_PI)); }
     static double _tanpi_(double x){ return (tan(x * M_PI)); }
 
-    static double _fma_(double a, double b, double c)
+    DEFINE_BUILTIN(fma_builtin)
     {
-      return a*b + c;
+      for (unsigned i = 0; i < result.num; i++)
+      {
+        if (result.size == 4)
+          result.setFloat(fmaf(FARGV(0, i), FARGV(1, i), FARGV(2, i)), i);
+        else
+          result.setFloat(fma(FARGV(0, i), FARGV(1, i), FARGV(2, i)), i);
+      }
     }
 
     static double _maxmag_(double x, double y)
@@ -2289,12 +2381,25 @@ namespace oclgrind
       for (unsigned i = 0; i < result.num; i++)
       {
         double x = FARGV(0, i);
-        double fl = floor(x);
-#if defined(_WIN32) && !defined(__MINGW32__)
-        double r = fmin(x - fl, nextafter(1, 0));
-#else
-        double r = fmin(x - fl, 0x1.fffffep-1f);
-#endif
+        double fl, r;
+        if (::isnan(x))
+        {
+          r = nan("");
+          fl = nan("");
+        }
+        else
+        {
+          if (result.size == 4)
+          {
+            fl = floorf(x);
+            r = fmin(x - fl, nextafterf(1, 0));
+          }
+          else
+          {
+            fl = floor(x);
+            r = fmin(x - fl, nextafter(1, 0));
+          }
+        }
 
         size_t offset = i*result.size;
         result.setFloat(fl, i);
@@ -2397,6 +2502,59 @@ namespace oclgrind
       }
     }
 
+    DEFINE_BUILTIN(powr)
+    {
+      for (unsigned i = 0; i < result.num; i++)
+      {
+        double x = FARGV(0, i);
+        double y = FARGV(1, i);
+
+        double r;
+        if (x < 0.0)
+        {
+          r = nan("");
+        }
+        else if (::isnan(x) || ::isnan(y))
+        {
+          r = nan("");
+        }
+        else if (x == 1.0)
+        {
+          if (::isinf(y))
+            r = nan("");
+          else
+            r = 1.0;
+        }
+        else if (y == 0.0)
+        {
+          if (x == 0.0 || x == INFINITY)
+            r = nan("");
+          else
+            r = 1.0;
+        }
+        else if (x == 0.0)
+        {
+          if (y < 0.0)
+            r = INFINITY;
+          else
+            r = 0.0;
+        }
+        else if (x == INFINITY)
+        {
+          if (y < 0.0)
+            r = 0.0;
+          else
+            r = INFINITY;
+        }
+        else
+        {
+          r = pow(x, y);
+        }
+
+        result.setFloat(r, i);
+      }
+    }
+
     DEFINE_BUILTIN(remquo_builtin)
     {
       Memory *memory =
@@ -2419,9 +2577,43 @@ namespace oclgrind
     {
       for (unsigned i = 0; i < result.num; i++)
       {
-        double x = FARGV(0, i);
-        int y = SARGV(1, i);
-        result.setFloat(pow(x, (double)(1.0/y)), i);
+        long double x = FARGV(0, i);
+        int n = SARGV(1, i);
+
+        long double r;
+        if (n == 0)
+        {
+          r = nan("");
+        }
+        else if (x == 0)
+        {
+          if (n < 0)
+          {
+            if (n&1)
+              r = copysign(INFINITY, x);
+            else
+              r = INFINITY;
+          }
+          else
+          {
+            if (n&1)
+              r = x;
+            else
+              r = 0.0;
+          }
+        }
+        else if (x < 0 && !(n&1))
+        {
+          r = nan("");
+        }
+        else
+        {
+          r = pow(fabs(x), 1.0L/n);
+          if (x < 0 && n&1)
+            r = -r;
+        }
+
+        result.setFloat(r, i);
       }
     }
 
@@ -2697,11 +2889,13 @@ namespace oclgrind
       uint64_t offset = UARG(1);
 
       // Convert to halfs
-      unsigned char *data = workItem->getOperand(value).data;
-      size_t num = size / sizeof(float);
-      size = num*sizeof(cl_half);
-      uint16_t *halfData = (uint16_t*)workItem->m_pool.alloc(2*num);
-      HalfRoundMode rmode = Half_RTE; //  The Oclgrind device's round mode
+      TypedValue op = workItem->getOperand(value);
+      unsigned char *data = op.data;
+      size = op.num*sizeof(cl_half);
+      uint16_t *halfData = (uint16_t*)workItem->m_pool.alloc(2*op.num);
+
+      // Parse rounding mode (RTE is the default)
+      HalfRoundMode rmode = Half_RTE;
       if (fnName.find("_rtz") != std::string::npos)
         rmode = Half_RTZ;
       else if (fnName.find("_rtn") != std::string::npos)
@@ -2709,19 +2903,22 @@ namespace oclgrind
       else if (fnName.find("_rtp") != std::string::npos)
         rmode = Half_RTP;
 
-      for (unsigned i = 0; i < num; i++)
+      for (unsigned i = 0; i < op.num; i++)
       {
-        halfData[i] = floatToHalf(((float*)data)[i], rmode);
+        if (op.size == 4)
+          halfData[i] = floatToHalf(((float*)data)[i], rmode);
+        else
+          halfData[i] = doubleToHalf(((double*)data)[i], rmode);
       }
 
       size_t address;
-      if (fnName.compare(0, 7, "vstorea") == 0 && num == 3)
+      if (fnName.compare(0, 7, "vstorea") == 0 && op.num == 3)
       {
         address = base + offset*sizeof(cl_half)*4;
       }
       else
       {
-        address = base + offset*sizeof(cl_half)*num;
+        address = base + offset*sizeof(cl_half)*op.num;
       }
 
       workItem->getMemory(addressSpace)->store((unsigned char*)halfData,
@@ -2798,8 +2995,41 @@ namespace oclgrind
     // Other Functions //
     /////////////////////
 
+    static void setConvertRoundingMode(const string& name, int def)
+    {
+      size_t rpos = name.find("_rt");
+      if (rpos != string::npos)
+      {
+        switch (name[rpos+3])
+        {
+        case 'e':
+          fesetround(FE_TONEAREST);
+          break;
+        case 'z':
+          fesetround(FE_TOWARDZERO);
+          break;
+        case 'p':
+          fesetround(FE_UPWARD);
+          break;
+        case 'n':
+          fesetround(FE_DOWNWARD);
+          break;
+        default:
+          FATAL_ERROR("Unsupported rounding mode: %c", name[rpos+3]);
+        }
+      }
+      else
+      {
+        fesetround(def);
+      }
+    }
+
     DEFINE_BUILTIN(convert_float)
     {
+      // Use rounding mode
+      const int origRnd = fegetround();
+      setConvertRoundingMode(fnName, FE_TONEAREST);
+
       for (unsigned i = 0; i < result.num; i++)
       {
         switch (getOverloadArgType(overload))
@@ -2808,13 +3038,19 @@ namespace oclgrind
           case 't':
           case 'j':
           case 'm':
-            result.setFloat((float)UARGV(0, i), i);
+          {
+            uint64_t in = UARGV(0, i);
+            if (result.size == 4)
+              result.setFloat(in ? (float)in : 0.f, i);
+            else
+              result.setFloat(in ? (double)in : 0.0, i);
             break;
+          }
           case 'c':
           case 's':
           case 'i':
           case 'l':
-            result.setFloat((float)SARGV(0, i), i);
+            result.setFloat(SARGV(0, i), i);
             break;
           case 'f':
           case 'd':
@@ -2825,6 +3061,7 @@ namespace oclgrind
                         getOverloadArgType(overload));
         }
       }
+      fesetround(origRnd);
     }
 
     DEFINE_BUILTIN(convert_half)
@@ -2865,44 +3102,30 @@ namespace oclgrind
       }
     }
 
-    static void setConvertRoundingMode(const string& name)
-    {
-      size_t rpos = name.find("_rt");
-      if (rpos != string::npos)
-      {
-        switch (name[rpos+3])
-        {
-        case 'e':
-          fesetround(FE_TONEAREST);
-          break;
-        case 'z':
-          fesetround(FE_TOWARDZERO);
-          break;
-        case 'p':
-          fesetround(FE_UPWARD);
-          break;
-        case 'n':
-          fesetround(FE_DOWNWARD);
-          break;
-        default:
-          FATAL_ERROR("Unsupported rounding mode: %c", name[rpos=3]);
-        }
-      }
-      else
-      {
-        fesetround(FE_TOWARDZERO);
-      }
-    }
-
     DEFINE_BUILTIN(convert_uint)
     {
       // Check for saturation modifier
       bool sat = fnName.find("_sat") != string::npos;
-      uint64_t max = (1UL<<(result.size*8)) - 1;
+      uint64_t max;
+      switch (result.size)
+      {
+        case 1:
+          max = UINT8_MAX;
+          break;
+        case 2:
+          max = UINT16_MAX;
+          break;
+        case 4:
+          max = UINT32_MAX;
+          break;
+        case 8:
+          max = UINT64_MAX;
+          break;
+      }
 
       // Use rounding mode
       const int origRnd = fegetround();
-      setConvertRoundingMode(fnName);
+      setConvertRoundingMode(fnName, FE_TOWARDZERO);
 
       for (unsigned i = 0; i < result.num; i++)
       {
@@ -2943,7 +3166,8 @@ namespace oclgrind
           case 'd':
             if (sat)
             {
-              r = rint(_clamp_(FARGV(0, i), 0.0, (double)max));
+              r = rint(_clamp_((long double)FARGV(0, i),
+                                0.0L, (long double)max));
             }
             else
             {
@@ -2987,7 +3211,7 @@ namespace oclgrind
 
       // Use rounding mode
       const int origRnd = fegetround();
-      setConvertRoundingMode(fnName);
+      setConvertRoundingMode(fnName, FE_TOWARDZERO);
 
       for (unsigned i = 0; i < result.num; i++)
       {
@@ -3018,7 +3242,8 @@ namespace oclgrind
           case 'd':
             if (sat)
             {
-              r = rint(_clamp_(FARGV(0, i), (double)min, (double)max));
+              r = rint(_clamp_((long double)FARGV(0, i),
+                               (long double)min, (long double)max));
             }
             else
             {
@@ -3416,7 +3641,7 @@ namespace oclgrind
     ADD_BUILTIN("fabs", f1arg, F1ARG(fabs));
     ADD_BUILTIN("fdim", f2arg, F2ARG(fdim));
     ADD_BUILTIN("floor", f1arg, F1ARG(floor));
-    ADD_BUILTIN("fma", f3arg, F3ARG(_fma_));
+    ADD_BUILTIN("fma", fma_builtin, NULL);
     ADD_BUILTIN("fmax", f2arg, F2ARG(fmax));
     ADD_BUILTIN("fmin", f2arg, F2ARG(fmin));
     ADD_BUILTIN("fmod", f2arg, F2ARG(fmod));
@@ -3432,7 +3657,7 @@ namespace oclgrind
     ADD_BUILTIN("log10", f1arg, F1ARG(log10));
     ADD_BUILTIN("log1p", f1arg, F1ARG(log1p));
     ADD_BUILTIN("logb", f1arg, F1ARG(logb));
-    ADD_BUILTIN("mad", f3arg, F3ARG(_fma_));
+    ADD_BUILTIN("mad", fma_builtin, NULL);
     ADD_BUILTIN("maxmag", f2arg, _maxmag_);
     ADD_BUILTIN("minmag", f2arg, _minmag_);
     ADD_BUILTIN("modf", modf_builtin, NULL);
@@ -3441,7 +3666,7 @@ namespace oclgrind
     ADD_BUILTIN("nextafter", nextafter_builtin, NULL);
     ADD_BUILTIN("pow", f2arg, F2ARG(pow));
     ADD_BUILTIN("pown", pown, NULL);
-    ADD_BUILTIN("powr", f2arg, F2ARG(pow));
+    ADD_BUILTIN("powr", powr, NULL);
     ADD_BUILTIN("remainder", f2arg, F2ARG(remainder));
     ADD_BUILTIN("remquo", remquo_builtin, NULL);
     ADD_BUILTIN("rint", f1arg, F1ARG(rint));
@@ -3476,8 +3701,8 @@ namespace oclgrind
     ADD_BUILTIN("native_log2", f1arg, F1ARG(log2));
     ADD_BUILTIN("half_log10", f1arg, F1ARG(log10));
     ADD_BUILTIN("native_log10", f1arg, F1ARG(log10));
-    ADD_BUILTIN("half_powr", f2arg, F2ARG(pow));
-    ADD_BUILTIN("native_powr", f2arg, F2ARG(pow));
+    ADD_BUILTIN("half_powr", powr, NULL);
+    ADD_BUILTIN("native_powr", powr, NULL);
     ADD_BUILTIN("half_recip", f1arg, _frecip_);
     ADD_BUILTIN("native_recip", f1arg, _frecip_);
     ADD_BUILTIN("half_rsqrt", f1arg, _rsqrt_);
@@ -3553,7 +3778,7 @@ namespace oclgrind
     ADD_PREFIX_BUILTIN("llvm.memcpy", llvm_memcpy, NULL);
     ADD_PREFIX_BUILTIN("llvm.memmove", llvm_memcpy, NULL);
     ADD_PREFIX_BUILTIN("llvm.memset", llvm_memset, NULL);
-    ADD_PREFIX_BUILTIN("llvm.fmuladd", f3arg, F3ARG(_fma_));
+    ADD_PREFIX_BUILTIN("llvm.fmuladd", fma_builtin, NULL);
     ADD_BUILTIN("llvm.trap", llvm_trap, NULL);
 
     return builtins;

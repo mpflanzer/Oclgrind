@@ -14,6 +14,8 @@ function usage
   echo "  oclgrind [--help | --version]"
   echo
   echo "Options:"
+  echo -n "     --arithmetic-exceptions   "
+  echo          "Enable detection of arithmetic exceptions"
   echo -n "     --build-options  OPTIONS  "
   echo          "Additional options to pass to the OpenCL compiler"
   echo -n "     --check-api               "
@@ -57,7 +59,10 @@ function usage
 # Parse arguments
 while [ $# -gt 0 -a "${1:0:1}" == "-" ]
 do
-  if [ "$1" == "--build-options" ]
+  if [ "$1" == "--arithmetic-exceptions" ]
+  then
+    export OCLGRIND_ARITHMETIC_EXCEPTIONS=1
+  elif [ "$1" == "--build-options" ]
   then
     shift
     export OCLGRIND_BUILD_OPTIONS="$1"

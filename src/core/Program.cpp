@@ -204,6 +204,12 @@ bool Program::build(const char *options, list<Header> headers)
     args.push_back("-cl-std=CL1.2");
   }
 
+  if (checkEnv("OCLGRIND_UBSAN"))
+  {
+    args.push_back("-fsanitize=signed-integer-overflow");
+    args.push_back("-fsanitize-recover=signed-integer-overflow");
+  }
+
   // Pre-compiled header
   char *pchdir = NULL;
   char *pch    = NULL;

@@ -33,6 +33,7 @@
 #include "plugins/Logger.h"
 #include "plugins/MemCheck.h"
 #include "plugins/RaceDetector.h"
+#include "plugins/UBSan.h"
 #include "plugins/Uninitialized.h"
 
 using namespace oclgrind;
@@ -86,6 +87,9 @@ void Context::loadPlugins()
 
   if (checkEnv("OCLGRIND_INTERACTIVE"))
     m_plugins.push_back(make_pair(new InteractiveDebugger(this), true));
+
+  if (checkEnv("OCLGRIND_UBSAN"))
+    m_plugins.push_back(make_pair(new UBSan(this), true));
 
 
   // Load dynamic plugins

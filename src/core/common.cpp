@@ -15,6 +15,7 @@
 #endif
 
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/raw_os_ostream.h"
@@ -312,12 +313,19 @@ namespace oclgrind
     }
     case llvm::Type::PointerTyID:
     {
-      if (constant->getValueID() != llvm::Value::ConstantPointerNullVal)
+      if(constant->getValueID() == llvm::Value::ConstantPointerNullVal)
+      {
+        *(size_t*)data = 0;
+      }
+      else if(constant->getValueID() == llvm::Value::GlobalVariableVal)
+      {
+        //getConstantData(data, ((llvm::GlobalVariable*)constant)->getInitializer());
+      }
+      else
       {
         FATAL_ERROR("Unsupported constant pointer value: %d",
                     constant->getValueID());
       }
-      *(size_t*)data = 0;
       break;
     }
     case llvm::Type::StructTyID:

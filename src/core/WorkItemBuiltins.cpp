@@ -3405,6 +3405,14 @@ namespace oclgrind
       }
     }
 
+    /////////////////////
+    // UBSan functions //
+    /////////////////////
+
+    DEFINE_BUILTIN(ubsan_add_overflow)
+    {
+      //TODO: What to do here?
+    }
 
     /////////////////////
     // LLVM Intrinsics //
@@ -3499,6 +3507,29 @@ namespace oclgrind
       unsigned char value = UARG(1);
       memset(buffer, value, size);
       workItem->getMemory(addressSpace)->store(buffer, dest, size);
+    }
+
+    DEFINE_BUILTIN(llvm_sadd_overflow)
+    {
+      //TODO: Current implemenation leaves overflow bit of result undefined
+      // The alternative is to merge the plugin into this function to simulate
+      // the intrinsic accurately
+      TypedValue opA = workItem->getOperand(callInst->getOperand(0));
+      TypedValue opB = workItem->getOperand(callInst->getOperand(1));
+      pair<unsigned,unsigned> resultSize = getValueSize(callInst->getOperand(0));
+      TypedValue addResult = {
+        resultSize.first,
+        resultSize.second,
+        new unsigned char[resultSize.first]
+      };
+
+      for (unsigned i = 0; i < addResult.num; i++)
+      {
+        addResult.setUInt(opA.getUInt(i) + opB.getUInt(i), i);
+      }
+
+      memcpy(result.data, addResult.data, addResult.size * addResult.num);
+      delete[] addResult.data;
     }
 
     DEFINE_BUILTIN(llvm_trap)
@@ -3770,6 +3801,9 @@ namespace oclgrind
     ADD_PREFIX_BUILTIN("convert_",       convert_sint, NULL);
     ADD_BUILTIN("printf", printf_builtin, NULL);
 
+    // UBSan functions
+    ADD_BUILTIN("__ubsan_handle_add_overflow", ubsan_add_overflow, NULL);
+
     // LLVM Intrinsics
     ADD_BUILTIN("llvm.dbg.declare", llvm_dbg_declare, NULL);
     ADD_BUILTIN("llvm.dbg.value", llvm_dbg_value, NULL);
@@ -3779,6 +3813,7 @@ namespace oclgrind
     ADD_PREFIX_BUILTIN("llvm.memmove", llvm_memcpy, NULL);
     ADD_PREFIX_BUILTIN("llvm.memset", llvm_memset, NULL);
     ADD_PREFIX_BUILTIN("llvm.fmuladd", fma_builtin, NULL);
+    ADD_PREFIX_BUILTIN("llvm.sadd.with.overflow", llvm_sadd_overflow, NULL);
     ADD_BUILTIN("llvm.trap", llvm_trap, NULL);
 
     return builtins;

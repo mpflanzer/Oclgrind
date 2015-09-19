@@ -184,6 +184,8 @@ add_library(oclgrind ${CORE_LIB_TYPE}
   src/plugins/MemCheck.cpp
   src/plugins/RaceDetector.h
   src/plugins/RaceDetector.cpp
+  src/plugins/UBSan.h
+  src/plugins/UBSan.cpp
   src/plugins/Uninitialized.h
   src/plugins/Uninitialized.cpp)
 target_link_libraries(oclgrind PRIVATE ${CORE_EXTRA_LIBS}

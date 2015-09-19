@@ -138,6 +138,10 @@ static bool parseArguments(int argc, char *argv[])
     {
       setEnvironment("OCLGRIND_UNIFORM_WRITES", "1");
     }
+    else if (!strcmp(argv[i], "--ubsan"))
+    {
+      setEnvironment("OCLGRIND_UBSAN", "1");
+    }
     else if (!strcmp(argv[i], "--uninitialized"))
     {
       setEnvironment("OCLGRIND_UNINITIALIZED", "1");
@@ -217,6 +221,8 @@ static void printUsage()
              "Load colon separated list of plugin libraries" << endl
     << "  -q --quick                   "
              "Only run first and last work-group" << endl
+    << "     --ubsan                   "
+             "Enable detection of arithmetic exceptions using Clang's UBSan" << endl
     << "     --uniform-writes          "
              "Don't suppress uniform write-write data-races" << endl
     << "     --uninitialized           "

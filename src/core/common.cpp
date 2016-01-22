@@ -6,6 +6,7 @@
 // license terms please see the LICENSE file distributed with this
 // source code.
 
+#include "config.h"
 #include "common.h"
 
 #if defined(_WIN32) && !defined(__MINGW32__)
@@ -317,10 +318,27 @@ namespace oclgrind
     switch (type->getTypeID())
     {
     case llvm::Type::IntegerTyID:
-      memcpy(data,
-             ((llvm::ConstantInt*)constant)->getValue().getRawData(),
-             size);
+    {
+      uint64_t ui = ((llvm::ConstantInt*)constant)->getZExtValue();
+      switch (size)
+      {
+      case 1:
+        *((uint8_t*)data) = ui;
+        break;
+      case 2:
+        *((uint16_t*)data) = ui;
+        break;
+      case 4:
+        *((uint32_t*)data) = ui;
+        break;
+      case 8:
+        *((uint64_t*)data) = ui;
+        break;
+      default:
+        FATAL_ERROR("Unsupported constant int size: %u bytes", size);
+      }
       break;
+    }
     case llvm::Type::FloatTyID:
     {
       *(float*)data =
@@ -385,13 +403,8 @@ namespace oclgrind
     const llvm::ConstantExpr *expr)
   {
     // Get operands
-    unsigned numOperands = expr->getNumOperands();
-    llvm::Value **valueOperands = new llvm::Value*[numOperands];
-    for (unsigned i = 0; i < numOperands; i++)
-    {
-      valueOperands[i] = expr->getOperand(i);
-    }
-    llvm::ArrayRef<llvm::Value*> operands(valueOperands, numOperands);
+    vector<llvm::Value*> valueOperands(expr->op_begin(), expr->op_end());
+    llvm::ArrayRef<llvm::Value*> operands(valueOperands);
 
     // Create instruction
     unsigned opcode = expr->getOpcode();
@@ -444,9 +457,10 @@ namespace oclgrind
       }
     case llvm::Instruction::ICmp:
     case llvm::Instruction::FCmp:
-      return llvm::CmpInst::Create((llvm::Instruction::OtherOps)opcode,
-                                   expr->getPredicate(),
-                                   operands[0], operands[1]);
+      return llvm::CmpInst::Create(
+        (llvm::Instruction::OtherOps)opcode,
+        (llvm::CmpInst::Predicate)expr->getPredicate(),
+        operands[0], operands[1]);
     default:
       assert(expr->getNumOperands() == 2 && "Must be binary operator?");
 

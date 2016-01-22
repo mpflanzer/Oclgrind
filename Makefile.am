@@ -48,7 +48,7 @@ oclgrind_includedir = $(includedir)/oclgrind
 oclgrind_include_HEADERS = src/core/common.h src/core/Context.h	\
  src/core/half.h src/core/Kernel.h src/core/KernelInvocation.h	\
  src/core/Memory.h src/core/Plugin.h src/core/Program.h		\
- src/core/Queue.h src/core/WorkItem.h src/core/WorkGroup.h config.h LICENSE
+ src/core/Queue.h src/core/WorkItem.h src/core/WorkGroup.h LICENSE
 src/core/clc_h.cpp: src/core/gen_clc_h.sh	src/core/clc.h
 	$(top_srcdir)/src/core/gen_clc_h.sh $(top_srcdir)/src/core/clc.h $@
 
@@ -98,14 +98,14 @@ src/include/oclgrind/clc.h: $(top_srcdir)/src/core/clc.h
 
 src/include/oclgrind/clc32.pch: src/include/oclgrind/clc.h
 	$(clang) \
-		-cc1 -x cl -cl-std=CL1.2 -O0 -g -fno-builtin \
+		-cc1 -x cl -cl-std=CL1.2 -O0 -fno-builtin \
 		-emit-pch -triple spir-unknown-unknown \
 		-relocatable-pch \
 		-isysroot $(abs_builddir)/src/include/oclgrind \
 		$< -o $@
 src/include/oclgrind/clc64.pch: src/include/oclgrind/clc.h
 	$(clang) \
-		-cc1 -x cl -cl-std=CL1.2 -O0 -g -fno-builtin \
+		-cc1 -x cl -cl-std=CL1.2 -O0 -fno-builtin \
 		-emit-pch -triple spir64-unknown-unknown \
 		-relocatable-pch \
 		-isysroot $(abs_builddir)/src/include/oclgrind \

@@ -6,6 +6,7 @@
 // license terms please see the LICENSE file distributed with this
 // source code.
 
+#include "config.h"
 #include "core/common.h"
 
 #include <iterator>
@@ -308,7 +309,7 @@ void InteractiveDebugger::printFunction(
       cout << ", ";
     }
     cout << argItr->getName().str() << "=";
-    m_kernelInvocation->getCurrentWorkItem()->printValue(argItr);
+    m_kernelInvocation->getCurrentWorkItem()->printValue(&*argItr);
   }
 
   cout << ") at line " << dec << getLineNumber(instruction) << endl;

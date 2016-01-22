@@ -26,6 +26,7 @@ set(CMAKE_MACOSX_RPATH 1)
 if (NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 endif()
 
 # Disable min/max macros on Windows
@@ -188,9 +189,9 @@ add_library(oclgrind ${CORE_LIB_TYPE}
   src/plugins/Uninitialized.cpp
   src/plugins/MemCheckUninitialized.h
   src/plugins/MemCheckUninitialized.cpp)
-target_link_libraries(oclgrind ${CORE_EXTRA_LIBS}
-  clangAnalysis clangAST clangBasic clangCodeGen clangDriver clangEdit
-  clangFrontend clangLex clangParse clangSema clangSerialization
+target_link_libraries(oclgrind PRIVATE ${CORE_EXTRA_LIBS}
+  clangFrontend clangSerialization clangDriver clangCodeGen clangSema
+  clangAnalysis clangEdit clangAST clangParse clangSema clangLex clangBasic
   ${LLVM_LIBS})
 
 # Sources for OpenCL runtime API frontend
@@ -244,7 +245,7 @@ add_custom_command(
   POST_BUILD
   COMMAND
     ${CLANG}
-    -cc1 -x cl -cl-std=CL1.2 -O0 -g -fno-builtin
+    -cc1 -x cl -cl-std=CL1.2 -O0 -fno-builtin
     -emit-pch -triple spir-unknown-unknown
     -relocatable-pch -isysroot ${CMAKE_BINARY_DIR}/include/oclgrind/
     ${CMAKE_BINARY_DIR}/include/oclgrind/clc.h
@@ -256,7 +257,7 @@ add_custom_command(
   POST_BUILD
   COMMAND
     ${CLANG}
-    -cc1 -x cl -cl-std=CL1.2 -O0 -g -fno-builtin
+    -cc1 -x cl -cl-std=CL1.2 -O0 -fno-builtin
     -emit-pch -triple spir64-unknown-unknown
     -relocatable-pch -isysroot ${CMAKE_BINARY_DIR}/include/oclgrind/
     ${CMAKE_BINARY_DIR}/include/oclgrind/clc.h
@@ -293,7 +294,7 @@ install(TARGETS
   oclgrind oclgrind-rt oclgrind-rt-icd
   DESTINATION lib)
 install(FILES
-  ${CORE_HEADERS} ${CMAKE_BINARY_DIR}/config.h ${CLC_HEADERS} LICENSE
+  ${CORE_HEADERS} ${CLC_HEADERS} LICENSE
   DESTINATION include/oclgrind)
 if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
   install(FILES

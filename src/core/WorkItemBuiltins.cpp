@@ -6,7 +6,9 @@
 // license terms please see the LICENSE file distributed with this
 // source code.
 
+#include "config.h"
 #include "common.h"
+
 #include <algorithm>
 #include <float.h>
 #include <fenv.h>
@@ -1974,7 +1976,7 @@ namespace oclgrind
           {
             uint64_t a = UARGV(0, i);
             uint64_t b = UARGV(1, i);
-            uint64_t c = (a > UINT64_MAX-b) ? (1L<<63) : 0;
+            uint64_t c = (a > UINT64_MAX-b) ? (((uint64_t)1)<<63) : 0;
             result.setUInt(((a + b) >> 1) | c, i);
             break;
           }
@@ -2214,7 +2216,7 @@ namespace oclgrind
           {
             uint64_t a = UARGV(0, i);
             uint64_t b = UARGV(1, i);
-            uint64_t c = (a > UINT64_MAX-(b+1)) ? (1L<<63) : 0;
+            uint64_t c = (a > UINT64_MAX-(b+1)) ? (((uint64_t)1)<<63) : 0;
             result.setUInt(((a + b + 1) >> 1) | c, i);
             break;
           }
@@ -3773,6 +3775,7 @@ namespace oclgrind
     // LLVM Intrinsics
     ADD_BUILTIN("llvm.dbg.declare", llvm_dbg_declare, NULL);
     ADD_BUILTIN("llvm.dbg.value", llvm_dbg_value, NULL);
+    ADD_PREFIX_BUILTIN("llvm.fabs.f", f1arg, F1ARG(fabs));
     ADD_BUILTIN("llvm.lifetime.start", llvm_lifetime_start, NULL);
     ADD_BUILTIN("llvm.lifetime.end", llvm_lifetime_end, NULL);
     ADD_PREFIX_BUILTIN("llvm.memcpy", llvm_memcpy, NULL);

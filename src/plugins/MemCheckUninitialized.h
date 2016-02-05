@@ -299,6 +299,7 @@ namespace oclgrind
             void logUninitializedAddress(unsigned int addrSpace, size_t address, bool write = true) const;
             void logUninitializedCF() const;
             void logUninitializedIndex() const;
+            void logUninitializedOperands() const;
             void logUninitializedWrite(unsigned int addrSpace, size_t address) const;
             void SimpleOr(const WorkItem *workItem, const llvm::Instruction *I);
             void SimpleOrAtomic(const WorkItem *workItem, const llvm::CallInst *CI);

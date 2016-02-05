@@ -1030,6 +1030,14 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
     ShadowWorkItem *shadowWorkItem = shadowContext.getShadowWorkItem(workItem);
     ShadowValues *shadowValues = shadowWorkItem->getValues();
 
+    if(getenv("OCLGRIND_MEMCHECK_UNINITIALIZED_STRICT"))
+    {
+        if(!checkAllOperandsDefined(workItem, instruction))
+        {
+            logUninitializedOperands();
+        }
+    }
+
     switch(instruction->getOpcode())
     {
         case llvm::Instruction::Add:
@@ -1854,6 +1862,17 @@ void MemCheckUninitialized::logUninitializedCF() const
 {
   Context::Message msg(OCLGRIND_WARNING_UNINITIALIZED, m_context);
   msg << "Controlflow depends on uninitialized value" << endl
+      << msg.INDENT
+      << "Kernel: " << msg.CURRENT_KERNEL << endl
+      << "Entity: " << msg.CURRENT_ENTITY << endl
+      << msg.CURRENT_LOCATION << endl;
+  msg.send();
+}
+
+void MemCheckUninitialized::logUninitializedOperands() const
+{
+  Context::Message msg(OCLGRIND_WARNING_UNINITIALIZED, m_context);
+  msg << "Instruction depends on uninitialized operands" << endl
       << msg.INDENT
       << "Kernel: " << msg.CURRENT_KERNEL << endl
       << "Entity: " << msg.CURRENT_ENTITY << endl

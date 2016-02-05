@@ -86,7 +86,7 @@ void Context::loadPlugins()
   if (checkEnv("OCLGRIND_UNINITIALIZED"))
     m_plugins.push_back(make_pair(new Uninitialized(this), true));
 
-  if (checkEnv("OCLGRIND_MEMCHECK_UNINITIALIZED"))
+  if (checkEnv("OCLGRIND_MEMCHECK_UNINITIALIZED") or checkEnv("OCLGRIND_MEMCHECK_UNINITIALIZED_STRICT"))
     m_plugins.push_back(make_pair(new MemCheckUninitialized(this), true));
 
   if (checkEnv("OCLGRIND_INTERACTIVE"))

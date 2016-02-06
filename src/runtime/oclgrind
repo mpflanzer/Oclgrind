@@ -40,6 +40,8 @@ function usage
   echo          "Enable/disable specific message group"
   echo -n "     --memcheck-uninitialized  "
   echo          "Report usage of uninitialized values"
+  echo -n "     --memcheck-uninitialized-strict"
+  echo          "Report usage of all uninitialized values"
   echo -n "     --num-threads    NUM      "
   echo          "Set the number of worker threads to use"
   echo -n "     --pch-dir        DIR      "

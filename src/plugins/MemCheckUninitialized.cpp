@@ -1034,7 +1034,7 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
     {
         case llvm::Instruction::Add:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::Alloca:
@@ -1051,7 +1051,7 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::And:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::AShr:
@@ -1251,22 +1251,22 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::FAdd:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::FCmp:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::FDiv:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::FMul:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::FPExt:
@@ -1276,12 +1276,12 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::FPToSI:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::FPToUI:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::FPTrunc:
@@ -1291,12 +1291,12 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::FRem:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::FSub:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::GetElementPtr:
@@ -1306,7 +1306,7 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::ICmp:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::InsertElement:
@@ -1434,12 +1434,12 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::Mul:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::Or:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::PHI:
@@ -1496,7 +1496,7 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::SDiv:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::Select:
@@ -1616,12 +1616,12 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::SIToFP:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::SRem:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::Store:
@@ -1649,7 +1649,7 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::Sub:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::Switch:
@@ -1676,24 +1676,24 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         }
         case llvm::Instruction::UDiv:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::UIToFP:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::URem:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::Unreachable:
             FATAL_ERROR("Encountered unreachable instruction");
         case llvm::Instruction::Xor:
         {
-            SimpleOr(workItem, instruction);
+            VectorOr(workItem, instruction);
             break;
         }
         case llvm::Instruction::ZExt:
@@ -1712,6 +1712,13 @@ void MemCheckUninitialized::instructionExecuted(const WorkItem *workItem,
         default:
             FATAL_ERROR("Unsupported instruction: %s", instruction->getOpcodeName());
     }
+
+#ifdef DUMP_SHADOW
+    if(shadowContext.hasValue(workItem, instruction))
+    {
+        cout << shadowContext.getValue(workItem, instruction) << endl;
+    }
+#endif
 }
 
 void MemCheckUninitialized::kernelBegin(const KernelInvocation *kernelInvocation)
@@ -1893,6 +1900,21 @@ void MemCheckUninitialized::memoryMap(const Memory *memory, size_t address,
         allocAndStoreShadowMemory(memory->getAddressSpace(), address + offset,
                 ShadowContext::getCleanValue(size));
     }
+}
+ 
+void MemCheckUninitialized::VectorOr(const WorkItem *workItem, const llvm::Instruction *I)
+{
+    PARANOID_CHECK(workItem, I);
+    ShadowValues *shadowValues = shadowContext.getShadowWorkItem(workItem)->getValues();
+
+    TypedValue newShadow = ShadowContext::getCleanValue(I);
+
+    for(llvm::Instruction::const_op_iterator OI = I->op_begin(); OI != I->op_end(); ++OI)
+    {
+        ShadowContext::shadowOr(newShadow, shadowContext.getValue(workItem, OI->get()));
+    }
+
+    shadowValues->setValue(I, newShadow);
 }
 
 void MemCheckUninitialized::SimpleOr(const WorkItem *workItem, const llvm::Instruction *I)
@@ -2752,4 +2774,17 @@ void ShadowContext::setGlobalValue(const llvm::Value *V, TypedValue SV)
 {
     assert(!m_globalValues.count(V) && "Values may only have one shadow");
     m_globalValues[V] = SV;
+}
+
+void ShadowContext::shadowOr(TypedValue v1, TypedValue v2)
+{
+    assert(v1.num == v2.num && "Cannot create shadow for vectors of different lengths!");
+
+    for(unsigned int i = 0; i < v1.num; ++i)
+    {
+        if(!ShadowContext::isCleanValue(v2, i))
+        {
+            memset(v1.data + i * v1.size, 0xff, v1.size);
+        }
+    }
 }

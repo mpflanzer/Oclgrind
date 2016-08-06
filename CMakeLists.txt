@@ -316,17 +316,17 @@ endif()
 
 
 # Tests
-enable_testing()
-
-# Check for Python
-find_package(PythonInterp)
-if (PYTHONINTERP_FOUND)
-
-  # Add test directories
-  add_subdirectory(tests/apps)
-  add_subdirectory(tests/kernels)
-  add_subdirectory(tests/runtime)
-
-else()
-  message(WARNING "Tests will not be run (Python required)")
-endif()
+#enable_testing()
+#
+## Check for Python
+#find_package(PythonInterp)
+#if (PYTHONINTERP_FOUND)
+#
+#  # Add test directories
+#  add_subdirectory(tests/apps)
+#  add_subdirectory(tests/kernels)
+#  add_subdirectory(tests/runtime)
+#
+#else()
+#  message(WARNING "Tests will not be run (Python required)")
+#endif()

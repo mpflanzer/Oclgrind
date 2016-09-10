@@ -2135,25 +2135,36 @@ namespace oclgrind
             break;
           case 'l':
 		  {
-			long res;
-			long hi = _smul_hi_(SARGV(0, i), SARGV(1, i), 64);
+			int64_t res;
+			int64_t hi = _smul_hi_(SARGV(0, i), SARGV(1, i), 64);
 			uint64_t ulo = SARGV(0, i) * SARGV(1, i);
+
 			/* Big overflow of more than 2 bits, add can't fix this */
 			if (((SARGV(0, i) < 0) == (SARGV(1, i) < 0)) && hi != 0)
-				res = LONG_MAX;
+            {
+				res = INT64_MAX;
+            }
 			/* Low overflow in mul and z not neg enough to correct it */
-            else if (hi == 0 && ulo >= LONG_MAX && (SARGV(2 ,i) > 0 || (ulo + SARGV(2, i)) > LONG_MAX))
-				res = LONG_MAX;
+            else if (hi == 0 && ulo >= INT64_MAX && (SARGV(2 ,i) > 0 || (ulo + SARGV(2, i)) > INT64_MAX))
+            {
+				res = INT64_MAX;
+            }
 			/* Big overflow of more than 2 bits, add can't fix this */
             else if (((SARGV(0, i) < 0) != (SARGV(1, i) < 0)) && hi != -1)
-				res = LONG_MIN;
+            {
+				res = INT64_MIN;
+            }
 			/* Low overflow in mul and z not pos enough to correct it */
-            else if (hi == -1 && ulo <= ((uint64_t)LONG_MAX + 1UL) && (SARGV(2, i) < 0 || SARGV(2, i) < (LONG_MAX - ulo)))
-				res = LONG_MIN;
+            else if (hi == -1 && ulo <= ((uint64_t)INT64_MAX + 1ULL) && (SARGV(2, i) < 0 || SARGV(2, i) < (INT64_MAX - ulo)))
+            {
+				res = INT64_MIN;
+            }
 			/* We have checked all conditions, any overflow in addition returns
 			 * the correct value */
             else
+            {
                 res = ulo + SARGV(2, i);
+            }
 
             result.setSInt(res, i);
             break;

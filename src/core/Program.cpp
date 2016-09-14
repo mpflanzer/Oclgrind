@@ -31,6 +31,7 @@
 #include "clang/CodeGen/CodeGenAction.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
+#include "clang/Lex/PreprocessorOptions.h"
 
 #include "Context.h"
 #include "Kernel.h"
@@ -156,6 +157,10 @@ bool Program::build(const char *options, list<Header> headers)
 
   bool optimize = true;
   bool cl12     = true;
+
+  // Disable optimizations by default if in interactive mode
+  if (checkEnv("OCLGRIND_INTERACTIVE"))
+    optimize = false;
 
   // Add OpenCL build options
   const char *mainOptions = options;
@@ -548,7 +553,7 @@ Kernel* Program::createKernel(const string name)
 
   // Iterate over functions in module to find kernel
   llvm::Function *function = NULL;
-
+#if LLVM_VERSION < 37
   // Query the SPIR kernel list
   llvm::NamedMDNode* tuple = m_module->getNamedMetadata("opencl.kernels");
   // No kernels in module
@@ -578,6 +583,17 @@ Kernel* Program::createKernel(const string name)
       break;
     }
   }
+#else
+  for (auto F = m_module->begin(); F != m_module->end(); F++)
+  {
+    if (F->getCallingConv() == llvm::CallingConv::SPIR_KERNEL &&
+        F->getName() == name)
+    {
+      function = &*F;
+      break;
+    }
+  }
+#endif
 
   if (function == NULL)
   {
@@ -669,6 +685,7 @@ list<string> Program::getKernelNames() const
 {
   list<string> names;
 
+#if LLVM_VERSION < 37
   // Query the SPIR kernel list
   llvm::NamedMDNode* tuple = m_module->getNamedMetadata("opencl.kernels");
 
@@ -693,6 +710,15 @@ list<string> Program::getKernelNames() const
       names.push_back(kernelFunction->getName());
     }
   }
+#else
+  for (auto F = m_module->begin(); F != m_module->end(); F++)
+  {
+    if (F->getCallingConv() == llvm::CallingConv::SPIR_KERNEL)
+    {
+      names.push_back(F->getName());
+    }
+  }
+#endif
 
   return names;
 }
@@ -701,6 +727,7 @@ unsigned int Program::getNumKernels() const
 {
   assert(m_module);
 
+#if LLVM_VERSION < 37
   // Extract kernels from metadata
   llvm::NamedMDNode* tuple = m_module->getNamedMetadata("opencl.kernels");
 
@@ -709,6 +736,19 @@ unsigned int Program::getNumKernels() const
     return 0;
 
   return tuple->getNumOperands();
+#else
+  unsigned int num = 0;
+
+  for (auto F = m_module->begin(); F != m_module->end(); F++)
+  {
+    if (F->getCallingConv() == llvm::CallingConv::SPIR_KERNEL)
+    {
+      num++;
+    }
+  }
+
+  return num;
+#endif
 }
 
 const string& Program::getSource() const

@@ -1287,6 +1287,12 @@ namespace oclgrind
             +    a  *    b  *    c  * v111;
     }
 
+    DEFINE_BUILTIN(translate_sampler_initializer)
+    {
+      // A sampler initializer is just a pointer to its ConstantInt object
+      result.setPointer((size_t)ARG(0));
+    }
+
     DEFINE_BUILTIN(read_imagef)
     {
       const Image *image = *(Image**)(workItem->getValue(ARG(0)).data);
@@ -1297,7 +1303,11 @@ namespace oclgrind
       // Check for sampler version
       if (callInst->getNumArgOperands() > 2)
       {
+#if LLVM_VERSION < 40
         sampler = UARG(1);
+#else
+        sampler = ((llvm::ConstantInt*)PARG(1))->getZExtValue();
+#endif
         coordIndex = 2;
       }
 
@@ -1415,7 +1425,11 @@ namespace oclgrind
       // Check for sampler version
       if (callInst->getNumArgOperands() > 2)
       {
+#if LLVM_VERSION < 40
         sampler = UARG(1);
+#else
+        sampler = ((llvm::ConstantInt*)PARG(1))->getZExtValue();
+#endif
         coordIndex = 2;
       }
 
@@ -1488,7 +1502,11 @@ namespace oclgrind
       // Check for sampler version
       if (callInst->getNumArgOperands() > 2)
       {
+#if LLVM_VERSION < 40
         sampler = UARG(1);
+#else
+        sampler = ((llvm::ConstantInt*)PARG(1))->getZExtValue();
+#endif
         coordIndex = 2;
       }
 
@@ -1977,8 +1995,8 @@ namespace oclgrind
           {
             uint64_t a = UARGV(0, i);
             uint64_t b = UARGV(1, i);
-            uint64_t c = (a > UINT64_MAX-b) ? (((uint64_t)1)<<63) : 0;
-            result.setUInt(((a + b) >> 1) | c, i);
+            uint64_t c = (a & b) & 1;
+            result.setUInt((a>>1) + (b>>1) + c, i);
             break;
           }
           case 'c':
@@ -2236,8 +2254,8 @@ namespace oclgrind
           {
             uint64_t a = UARGV(0, i);
             uint64_t b = UARGV(1, i);
-            uint64_t c = (a > UINT64_MAX-(b+1)) ? (((uint64_t)1)<<63) : 0;
-            result.setUInt(((a + b + 1) >> 1) | c, i);
+            uint64_t c = (a | b) & 1;
+            result.setUInt((a>>1) + (b>>1) + c, i);
             break;
           }
           case 'c':
@@ -3629,6 +3647,10 @@ namespace oclgrind
     ADD_BUILTIN("write_imagef", write_imagef, NULL);
     ADD_BUILTIN("write_imagei", write_imagei, NULL);
     ADD_BUILTIN("write_imageui", write_imageui, NULL);
+#if LLVM_VERSION >= 40
+    ADD_BUILTIN("__translate_sampler_initializer",
+                translate_sampler_initializer, NULL);
+#endif
 
     // Integer Functions
     ADD_BUILTIN("abs", abs_builtin, NULL);

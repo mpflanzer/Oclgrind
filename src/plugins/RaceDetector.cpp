@@ -43,14 +43,17 @@ void RaceDetector::kernelBegin(const KernelInvocation *kernelInvocation)
 
 void RaceDetector::kernelEnd(const KernelInvocation *kernelInvocation)
 {
+  // Log races
+  for (auto race : kernelRaces)
+    logRace(race);
+  kernelRaces.clear();
+
   // Clear all global memory accesses
-  for (auto buffer  = m_globalAccesses.begin();
-            buffer != m_globalAccesses.end();
-            buffer++)
+  for (auto &buffer : m_globalAccesses)
   {
-    size_t sz = buffer->second.size();
-    buffer->second.clear();
-    buffer->second.resize(sz);
+    size_t sz = buffer.second.size();
+    buffer.second.clear();
+    buffer.second.resize(sz);
   }
 
   m_kernelInvocation = NULL;
@@ -168,28 +171,25 @@ void RaceDetector::workGroupComplete(const WorkGroup *workGroup)
   syncWorkItems(m_context->getGlobalMemory(), state, state.wiGlobal);
 
   // Merge global accesses across kernel invocation
-  RaceList races;
   size_t group = workGroup->getGroupIndex();
-  for (auto record  = state.wgGlobal.begin();
-            record != state.wgGlobal.end();
-            record++)
+  for (auto &record : state.wgGlobal)
   {
-    size_t address = record->first;
+    size_t address = record.first;
     size_t buffer = m_context->getGlobalMemory()->extractBuffer(address);
     size_t offset = m_context->getGlobalMemory()->extractOffset(address);
 
     lock_guard<mutex> lock(GLOBAL_MUTEX(buffer, offset));
 
-    AccessRecord& a = record->second;
+    AccessRecord& a = record.second;
     AccessRecord& b = m_globalAccesses.at(buffer)[offset];
 
     // Check for races with previous accesses
     if (check(a.load,  b.store) && getAccessWorkGroup(b.store) != group)
-      insertRace(races, {AddrSpaceGlobal, address, a.load, b.store});
+      insertKernelRace({AddrSpaceGlobal, address, a.load, b.store});
     if (check(a.store, b.load) && getAccessWorkGroup(b.load) != group)
-      insertRace(races, {AddrSpaceGlobal, address, a.store, b.load});
+      insertKernelRace({AddrSpaceGlobal, address, a.store, b.load});
     if (check(a.store, b.store) && getAccessWorkGroup(b.store) != group)
-      insertRace(races, {AddrSpaceGlobal, address, a.store, b.store});
+      insertKernelRace({AddrSpaceGlobal, address, a.store, b.store});
 
     // Insert accesses
     if (a.load.isSet())
@@ -198,10 +198,6 @@ void RaceDetector::workGroupComplete(const WorkGroup *workGroup)
       insert(b, a.store);
   }
   state.wgGlobal.clear();
-
-  // Log races
-  for (auto race = races.begin(); race != races.end(); race++)
-    logRace(*race);
 
   // Clean-up work-group state
   m_state.groups->erase(workGroup);
@@ -268,20 +264,20 @@ void RaceDetector::insert(AccessRecord& record,
   }
 }
 
+void RaceDetector::insertKernelRace(const Race& race)
+{
+  lock_guard<mutex> lock(kernelRacesMutex);
+  insertRace(kernelRaces, race);
+}
+
 void RaceDetector::insertRace(RaceList& races, const Race& race) const
 {
   // Check list for duplicates
   for (auto x = races.begin(); x != races.end(); x++)
   {
     // Check if races are equal modulo address
-    if ((race.a.getInstruction() == x->a.getInstruction()) &&
-        (race.b.getInstruction() == x->b.getInstruction()) &&
-        (race.a.isLoad() == x->a.isLoad()) &&
-        (race.b.isLoad() == x->b.isLoad()) &&
-        (race.a.isWorkItem() == x->a.isWorkItem()) &&
-        (race.b.isWorkItem() == x->b.isWorkItem()) &&
-        (race.a.getEntity() == x->a.getEntity()) &&
-        (race.b.getEntity() == x->b.getEntity()))
+    if ((race.a == x->a && race.b == x->b) ||
+        (race.a == x->b && race.b == x->a))
     {
       // If they match, keep the one with the lowest address
       if (race.address < x->address)
@@ -402,13 +398,11 @@ void RaceDetector::syncWorkItems(const Memory *memory,
   for (size_t i = 0; i < state.numWorkItems + 1; i++)
   {
     RaceList races;
-    for (auto record  = accesses[i].begin();
-              record != accesses[i].end();
-              record++)
+    for (auto &record : accesses[i])
     {
-      size_t address = record->first;
+      size_t address = record.first;
 
-      AccessRecord& a = record->second;
+      AccessRecord& a = record.second;
       AccessRecord& b = wgAccesses[address];
 
       if (check(a.load,  b.store))
@@ -435,8 +429,8 @@ void RaceDetector::syncWorkItems(const Memory *memory,
     accesses[i].clear();
 
     // Log races
-    for (auto race = races.begin(); race != races.end(); race++)
-      logRace(*race);
+    for (auto race : races)
+      logRace(race);
   }
 }
 
@@ -523,4 +517,12 @@ uint8_t RaceDetector::MemoryAccess::getStoreData() const
 void RaceDetector::MemoryAccess::setStoreData(uint8_t data)
 {
   this->storeData = data;
+}
+
+bool RaceDetector::MemoryAccess::operator==(
+  const RaceDetector::MemoryAccess& other) const
+{
+  return this->entity == other.entity &&
+         this->instruction == other.instruction &&
+         this->info == other.info;
 }

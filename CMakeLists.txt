@@ -138,6 +138,11 @@ else()
  set(HAVE_READLINE 0)
 endif()
 
+# Set platform specific libraries
+if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
+  list(APPEND PLATFORM_LIBS Version)
+endif()
+
 # Generate stringified clc.h
 add_custom_command(
   OUTPUT src/core/clc_h.cpp
@@ -211,7 +216,7 @@ endif()
 
 add_library(oclgrind-rt-icd SHARED ${RUNTIME_SOURCES})
 set_target_properties(oclgrind-rt-icd PROPERTIES COMPILE_FLAGS -DOCLGRIND_ICD)
-target_link_libraries(oclgrind-rt-icd ${CMAKE_DL_LIBS} oclgrind)
+target_link_libraries(oclgrind-rt-icd ${CMAKE_DL_LIBS} oclgrind ${PLATFORM_LIBS})
 
 # Add runtime exports on Windows
 if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
@@ -219,13 +224,13 @@ if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
 endif()
 
 add_library(oclgrind-rt SHARED ${RUNTIME_SOURCES})
-target_link_libraries(oclgrind-rt ${CMAKE_DL_LIBS} oclgrind)
+target_link_libraries(oclgrind-rt ${CMAKE_DL_LIBS} oclgrind ${PLATFORM_LIBS})
 
 add_executable(oclgrind-kernel
   src/kernel/oclgrind-kernel.cpp
   src/kernel/Simulation.h
   src/kernel/Simulation.cpp)
-target_link_libraries(oclgrind-kernel oclgrind)
+  target_link_libraries(oclgrind-kernel oclgrind ${PLATFORM_LIBS})
 
 set(CLC_HEADERS
  ${CMAKE_BINARY_DIR}/include/oclgrind/clc.h

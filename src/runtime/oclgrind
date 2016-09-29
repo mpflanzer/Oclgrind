@@ -14,6 +14,8 @@ function usage
   echo "  oclgrind [--help | --version]"
   echo
   echo "Options:"
+  echo -n "     --arithmetic-exceptions   "
+  echo          "Enable detection of arithmetic exceptions"
   echo -n "     --build-options  OPTIONS  "
   echo          "Additional options to pass to the OpenCL compiler"
   echo -n "     --check-api               "
@@ -69,6 +71,9 @@ do
   if [ "${1:1:1}" == "W" ]
   then
     diagnosticOptions+=("$1")
+  elif [ "$1" == "--arithmetic-exceptions" ]
+  then
+    export OCLGRIND_ARITHMETIC_EXCEPTIONS=1
   elif [ "$1" == "--build-options" ]
   then
     shift

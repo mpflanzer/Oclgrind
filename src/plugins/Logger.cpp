@@ -132,6 +132,7 @@ void Logger::enableAllDiagnostics()
   enableDiagnosticOption(OCLGRIND_ERROR);
   // Turn on specific groups
   enableDiagnosticOption(OCLGRIND_WARNING_UNINITIALIZED);
+  enableDiagnosticOption(OCLGRIND_WARNING_ARITHMETIC);
   enableDiagnosticOption(OCLGRIND_ERROR_DIVERGENCE);
   enableDiagnosticOption(OCLGRIND_ERROR_INVALID_ACCESS);
   enableDiagnosticOption(OCLGRIND_ERROR_DATA_RACE);
@@ -209,6 +210,10 @@ bool Logger::parseDiagnosticOptions(char *options)
     else if (!strcmp(opt_type, "uninitialized"))
     {
       enableDiagnosticOption(OCLGRIND_WARNING_UNINITIALIZED, isPositive);
+    }
+    else if (!strcmp(opt_type, "arithmetic"))
+    {
+      enableDiagnosticOption(OCLGRIND_WARNING_ARITHMETIC, isPositive);
     }
     else if (!strcmp(opt_type, "divergence"))
     {

@@ -54,6 +54,10 @@ static bool parseArguments(int argc, char *argv[])
     if (!strncmp(argv[i], "-W", 2))
     {
       diagnosticOptions.push_back(argv[i]);
+	}
+	else if (!strcmp(argv[i], "--arithmetic-exceptions"))
+    {
+      setEnvironment("OCLGRIND_ARITHMETIC_EXCEPTIONS", "1");
     }
     else if (!strcmp(argv[i], "--build-options"))
     {
@@ -220,6 +224,8 @@ static void printUsage()
     << "       oclgrind-kernel [--help | --version]" << endl
     << endl
     << "Options:" << endl
+    << "     --arithmetic-exceptions   "
+             "Enable detection of arithmetic exceptions" << endl
     << "     --build-options  OPTIONS  "
              "Additional options to pass to the OpenCL compiler" << endl
     << "     --data-races              "

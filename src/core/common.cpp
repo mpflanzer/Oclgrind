@@ -451,7 +451,7 @@ namespace oclgrind
       else
       {
 #if LLVM_VERSION > 36
-        return llvm::GetElementPtrInst::Create(nullptr,
+        return llvm::GetElementPtrInst::Create(expr->getType(),
                                                operands[0], operands.slice(1));
 #else
         return llvm::GetElementPtrInst::Create(operands[0], operands.slice(1));

@@ -111,7 +111,7 @@ void Context::loadPlugins()
     while(std::getline(ss, libpath, ':'))
     {
 #if defined(_WIN32) && !defined(__MINGW32__)
-      HMODULE library = LoadLibraryA(libpath.c_str());
+      HMODULE library = LoadLibrary(libpath.c_str());
       if (!library)
       {
         cerr << "Loading Oclgrind plugin failed (LoadLibrary): "

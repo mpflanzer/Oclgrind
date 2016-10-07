@@ -27,6 +27,7 @@ if (NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-strict-aliasing")
 endif()
 
 # Disable min/max macros on Windows
@@ -64,6 +65,11 @@ llvm_map_components_to_libnames(LLVM_LIBS
 if (NOT (${LLVM_PACKAGE_VERSION} VERSION_LESS "3.9"))
   llvm_map_components_to_libnames(LLVM_COVERAGE coverage)
   list(APPEND LLVM_LIBS ${LLVM_COVERAGE})
+endif()
+
+if (NOT (${LLVM_PACKAGE_VERSION} VERSION_LESS "4.0"))
+  llvm_map_components_to_libnames(LLVM_COROUTINES coroutines)
+  list(APPEND LLVM_LIBS ${LLVM_COROUTINES})
 endif()
 
 
@@ -199,6 +205,10 @@ target_link_libraries(oclgrind PRIVATE ${CORE_EXTRA_LIBS}
   clangParse clangSema clangAnalysis clangEdit clangAST clangLex clangBasic
   ${LLVM_LIBS})
 
+if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
+  target_link_libraries(oclgrind PRIVATE Version)
+endif()
+
 # Sources for OpenCL runtime API frontend
 set(RUNTIME_SOURCES
   src/runtime/async_queue.h
@@ -208,20 +218,23 @@ set(RUNTIME_SOURCES
 
 # Add ICD exports on Windows
 if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
-  list(APPEND RUNTIME_SOURCES src/runtime/icd.def)
+  set(DLL_EXPORTS src/runtime/icd.def)
 endif()
 
-add_library(oclgrind-rt-icd SHARED ${RUNTIME_SOURCES})
+add_library(oclgrind-rt-icd SHARED ${RUNTIME_SOURCES} ${DLL_EXPORTS})
 set_target_properties(oclgrind-rt-icd PROPERTIES COMPILE_FLAGS -DOCLGRIND_ICD)
 target_link_libraries(oclgrind-rt-icd ${CMAKE_DL_LIBS} oclgrind)
 
 # Add runtime exports on Windows
 if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
-  list(APPEND RUNTIME_SOURCES src/runtime/runtime.def)
+  set(DLL_EXPORTS src/runtime/runtime.def)
 endif()
 
-add_library(oclgrind-rt SHARED ${RUNTIME_SOURCES})
+add_library(oclgrind-rt SHARED ${RUNTIME_SOURCES} ${DLL_EXPORTS})
 target_link_libraries(oclgrind-rt ${CMAKE_DL_LIBS} oclgrind)
+
+add_executable(oclgrind-exe src/runtime/oclgrind.cpp)
+set_target_properties(oclgrind-exe PROPERTIES OUTPUT_NAME oclgrind)
 
 add_executable(oclgrind-kernel
   src/kernel/oclgrind-kernel.cpp
@@ -275,25 +288,14 @@ add_custom_command(
 configure_file("cmake_config.h.in" "config.h")
 
 
-# Install oclgrind script if not on Windows
+# Generate ICD loader if not on Windows
 if (NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
-  file(READ src/runtime/oclgrind OCLGRIND_SCRIPT)
-  string(REGEX REPLACE
-    "__VERSION__" "${Oclgrind_VERSION_MAJOR}.${Oclgrind_VERSION_MINOR}"
-    OCLGRIND_SCRIPT "${OCLGRIND_SCRIPT}")
-  file(WRITE ${CMAKE_BINARY_DIR}/oclgrind "${OCLGRIND_SCRIPT}")
-
-  # Generate ICD loader
   file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/oclgrind.icd
        CONTENT "$<TARGET_FILE:oclgrind-rt-icd>\n")
-
-  install(PROGRAMS
-    ${CMAKE_BINARY_DIR}/oclgrind
-    DESTINATION bin)
 endif()
 
 install(TARGETS
-  oclgrind-kernel
+  oclgrind-exe oclgrind-kernel
   DESTINATION bin)
 install(TARGETS
   oclgrind oclgrind-rt oclgrind-rt-icd

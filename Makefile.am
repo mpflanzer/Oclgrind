@@ -20,8 +20,19 @@ endif USING_CLANG
 
 lib_LTLIBRARIES = liboclgrind.la liboclgrind-rt.la liboclgrind-rt-icd.la
 
-LLVM_LIBS = `$(llvm_config) --system-libs --libs bitreader bitwriter	\
- core instrumentation ipo irreader linker mcparser objcarcopts option target`
+
+LLVM_COMPONENTS = bitreader bitwriter core instrumentation ipo	\
+irreader linker mcparser objcarcopts option target
+
+if LLVM_39_OR_NEWER
+LLVM_COMPONENTS += coverage
+endif LLVM_39_OR_NEWER
+
+if LLVM_40_OR_NEWER
+LLVM_COMPONENTS += coroutines
+endif LLVM_40_OR_NEWER
+
+LLVM_LIBS = `$(llvm_config) --system-libs --libs $(LLVM_COMPONENTS)`
 
 liboclgrind_la_SOURCES = src/core/common.h src/core/common.cpp		\
  src/core/Context.h src/core/Context.cpp src/core/half.h		\
@@ -74,16 +85,14 @@ liboclgrind_rt_icd_la_SOURCES = $(RUNTIME_SOURCES)
 liboclgrind_rt_icd_la_LIBADD = liboclgrind.la
 liboclgrind_rt_icd_la_LDFLAGS = -shared
 
-bin_PROGRAMS = oclgrind-kernel
+bin_PROGRAMS = oclgrind oclgrind-kernel
+
+oclgrind_SOURCES = src/runtime/oclgrind.cpp
+
 oclgrind_kernel_SOURCES = src/kernel/oclgrind-kernel.cpp	\
  src/kernel/Simulation.h src/kernel/Simulation.cpp
 oclgrind_kernel_LDADD = liboclgrind.la
 
-bin_SCRIPTS = oclgrind
-oclgrind: $(top_srcdir)/src/runtime/oclgrind
-	cat $(top_srcdir)/src/runtime/oclgrind \
-	| $(SED) 's|__VERSION__|'$(VERSION)'|g' \
-	>$@
 noinst_SCRIPTS = oclgrind.icd \
  src/include/oclgrind/clc.h \
  src/include/oclgrind/clc32.pch \
@@ -111,9 +120,9 @@ src/include/oclgrind/clc64.pch: src/include/oclgrind/clc.h
 		-isysroot $(abs_builddir)/src/include/oclgrind \
 		$< -o $@
 
-EXTRA_DIST = NEWS src/core/gen_clc_h.sh src/core/clc.h			\
- src/runtime/oclgrind src/CL/cl.h src/CL/cl_gl.h src/CL/cl_platform.h	\
- src/CL/cl_ext.h src/CL/cl_gl_ext.h src/CL/cl_egl.h src/CL/cl_d3d10.h	\
+EXTRA_DIST = NEWS src/core/gen_clc_h.sh src/core/clc.h src/CL/cl.h	\
+ src/CL/cl_gl.h src/CL/cl_platform.h src/CL/cl_ext.h			\
+ src/CL/cl_gl_ext.h src/CL/cl_egl.h src/CL/cl_d3d10.h			\
  src/CL/cl_d3d11.h src/CL/cl_dx9_media_sharing.h src/CL/opencl.h	\
  CMakeLists.txt tests/apps/CMakeLists.txt tests/kernels/CMakeLists.txt	\
  tests/runtime/CMakeLists.txt cmake_config.h.in				\
@@ -121,4 +130,4 @@ EXTRA_DIST = NEWS src/core/gen_clc_h.sh src/core/clc.h			\
  src/install/INSTALL.darwin src/install/INSTALL.linux			\
  src/install/INSTALL.windows src/install/install.bat			\
  src/install/uninstall.bat src/install/oclgrind-icd.reg
-CLEANFILES = src/core/clc_h.cpp $(bin_SCRIPTS) $(noinst_SCRIPTS)
+CLEANFILES = src/core/clc_h.cpp $(noinst_SCRIPTS)

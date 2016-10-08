@@ -14,10 +14,10 @@ import sys
 
 # Check arguments
 if len(sys.argv) != 3:
-  print 'Usage: python run_test.py OCLGRIND-KERNEL TEST_EXE|TEST.sim'
+  print('Usage: python run_test.py OCLGRIND-KERNEL TEST_EXE|TEST.sim')
   sys.exit(1)
 if not os.path.isfile(sys.argv[2]):
-  print 'Test file not found'
+  print('Test file not found')
   sys.exit(1)
 
 # Construct paths to test inputs/outputs
@@ -49,7 +49,7 @@ os.environ["OCLGRIND_ARITHMETIC_EXCEPTIONS"] = "1"
 os.environ["OCLGRIND_DIAGNOSTIC_OPTIONS"] = "-Wall"
 
 def fail(ret=1):
-  print 'FAILED'
+  print('FAILED')
   sys.exit(ret)
 
 def run(output_suffix):
@@ -85,7 +85,7 @@ def run(output_suffix):
 
   out.close()
   if retval != 0:
-    print 'Test returned non-zero value (' + str(retval) + ')'
+    print('Test returned non-zero value (' + str(retval) + ')')
     fail(retval)
 
   # Compare output to reference file (if provided)
@@ -111,8 +111,8 @@ def run(output_suffix):
       if type == 'ERROR':
         # Check first line of error contains reference message
         if not text in out[oi]:
-          print 'Expected '  + line
-          print 'Found    "' + out[oi] + '"'
+          print('Expected '  + line)
+          print('Found    "' + out[oi] + '"')
           fail()
         # Skip remaining lines of error
         while oi < len(out) and len(out[oi]):
@@ -120,30 +120,30 @@ def run(output_suffix):
       elif type == 'EXACT':
         # Check line of output matches reference exactly
         if not text == out[oi]:
-          print 'Expected '  + line
-          print 'Found    "' + out[oi] + '"'
+          print('Expected '  + line)
+          print('Found    "' + out[oi] + '"')
           fail()
         oi += 1
       elif type == 'MATCH':
         # Check line of output contains reference text
         if not text in out[oi]:
-          print 'Expected '  + line
-          print 'Found    "' + out[oi] + '"'
+          print('Expected '  + line)
+          print('Found    "' + out[oi] + '"')
           fail()
         oi += 1
       else:
-        print 'Invalid match type in reference file'
+        print('Invalid match type in reference file')
         fail()
 
-print 'Running test with optimisations'
+print('Running test with optimisations')
 run('')
-print 'PASSED'
+print('PASSED')
 
-print
-print 'Running test without optimisations'
+print('')
+print('Running test without optimisations')
 os.environ["OCLGRIND_BUILD_OPTIONS"] = "-cl-opt-disable"
 run('_noopt')
-print 'PASSED'
+print('PASSED')
 
 # Test passed
 sys.exit(0)

@@ -144,6 +144,13 @@ else()
  set(HAVE_READLINE 0)
 endif()
 
+# Check for library directory suffixes
+set(LIBDIR_SUFFIX "")
+get_property(USING_LIB64 GLOBAL PROPERTY FIND_LIBRARY_USE_LIB64_PATHS)
+if (USING_LIB64 AND NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin")
+  set(LIBDIR_SUFFIX "64")
+endif()
+
 # Generate stringified clc.h
 add_custom_command(
   OUTPUT src/core/clc_h.cpp
@@ -235,6 +242,7 @@ target_link_libraries(oclgrind-rt ${CMAKE_DL_LIBS} oclgrind)
 
 add_executable(oclgrind-exe src/runtime/oclgrind.cpp)
 set_target_properties(oclgrind-exe PROPERTIES OUTPUT_NAME oclgrind)
+target_compile_definitions(oclgrind-exe PRIVATE "-DLIBDIR_SUFFIX=\"${LIBDIR_SUFFIX}\"")
 
 add_executable(oclgrind-kernel
   src/kernel/oclgrind-kernel.cpp
@@ -299,7 +307,7 @@ install(TARGETS
   DESTINATION bin)
 install(TARGETS
   oclgrind oclgrind-rt oclgrind-rt-icd
-  DESTINATION lib)
+  DESTINATION "lib${LIBDIR_SUFFIX}")
 install(FILES
   ${CORE_HEADERS} ${CLC_HEADERS} LICENSE
   DESTINATION include/oclgrind)
@@ -320,17 +328,34 @@ endif()
 
 
 # Tests
-#enable_testing()
-#
-## Check for Python
-#find_package(PythonInterp)
-#if (PYTHONINTERP_FOUND)
-#
-#  # Add test directories
-#  add_subdirectory(tests/apps)
-#  add_subdirectory(tests/kernels)
-#  add_subdirectory(tests/runtime)
-#
-#else()
-#  message(WARNING "Tests will not be run (Python required)")
-#endif()
+enable_testing()
+
+# Check for Python
+find_package(PythonInterp)
+if (PYTHONINTERP_FOUND)
+
+  # Add test directories
+  add_subdirectory(tests/apps)
+  add_subdirectory(tests/kernels)
+  add_subdirectory(tests/runtime)
+
+else()
+  message(WARNING "Tests will not be run (Python required)")
+endif()
+
+
+# CPack config
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "OpenCL device simulator")
+set(CPACK_PACKAGE_DESCRIPTION_FILE
+    "${CMAKE_SOURCE_DIR}/src/install/cpack-description")
+set(CPACK_PACKAGE_VENDOR "University of Bristol")
+set(CPACK_PACKAGE_VERSION_MAJOR ${Oclgrind_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${Oclgrind_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION "${Oclgrind_VERSION_MAJOR}.${Oclgrind_VERSION_MINOR}")
+set(CPACK_PACKAGE_VERSION_PATCH "0")
+
+# CPack RPM config
+set(CPACK_RPM_PACKAGE_GROUP "Development/Tools")
+set(CPACK_RPM_PACKAGE_LICENSE "BSD")
+
+include(CPack)

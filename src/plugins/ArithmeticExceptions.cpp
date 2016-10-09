@@ -9,14 +9,16 @@
 // The recommendations how to detect undefined behaviour haven been adopted from:
 // https://www.securecoding.cert.org/confluence/display/c/INT32-C.+Ensure+that+operations+on+signed+integers+do+not+result+in+overflow
 // https://www.securecoding.cert.org/confluence/display/c/INT33-C.+Ensure+that+division+and+remainder+operations+do+not+result+in+divide-by-zero+errors
-// Overflow in unary minus operator cnnot be checked in LLVM IR
+// Overflow in unary minus operator cannot be checked in LLVM IR
 // Oversize shifts are well-defined in OpenCL
+// Arithmetic operations involving vector types do not seem to produce nsw or nuw flags. This means overflows cannot be detected.
 
 #include "core/common.h"
 #include "core/Context.h"
 #include "core/WorkItem.h"
 
 #include <sstream>
+#include <cfloat>
 
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
@@ -30,6 +32,8 @@
 using namespace oclgrind;
 using namespace std;
 
+#define HALF_MAX 65504
+
 static long getSignedMinValue(const unsigned int bits)
 {
     return -(1L << (bits - 2)) - (1L << (bits - 2));
@@ -38,6 +42,11 @@ static long getSignedMinValue(const unsigned int bits)
 static long getSignedMaxValue(const unsigned int bits)
 {
     return ((1L << (bits - 2)) - 1L) + (1L << (bits - 2));
+}
+
+static long getUnsignedMaxValue(const unsigned int bits)
+{
+    return ((1L << (bits - 1)) - 1L) + (1L << (bits - 1));
 }
 
 void ArithmeticExceptions::instructionExecuted(
@@ -75,10 +84,47 @@ void ArithmeticExceptions::instructionExecuted(
         //case llvm::Instruction::FAdd:
         //case llvm::Instruction::FDiv:
         //case llvm::Instruction::FMul:
-        //case llvm::Instruction::FPExt:
-        //case llvm::Instruction::FPToSI:
-        //case llvm::Instruction::FPToUI:
-        //case llvm::Instruction::FPTrunc:
+
+        case llvm::Instruction::FPToSI:
+        {
+            const auto&& CastInst = llvm::dyn_cast<llvm::CastInst>(instruction);
+            const TypedValue Val = workItem->getOperand(instruction->getOperand(0));
+            const unsigned int ResultWidth = CastInst->getDestTy()->getScalarSizeInBits();
+
+            if(Val.getFloat(0) < getSignedMinValue(ResultWidth) || Val.getFloat(0) > getSignedMaxValue(ResultWidth))
+            {
+                logArithmeticException();
+            }
+
+            break;
+        }
+        case llvm::Instruction::FPToUI:
+        {
+            const auto&& CastInst = llvm::dyn_cast<llvm::CastInst>(instruction);
+            const TypedValue Val = workItem->getOperand(instruction->getOperand(0));
+            const unsigned int ResultWidth = CastInst->getDestTy()->getScalarSizeInBits();
+
+            if(Val.getFloat(0) < 0 || Val.getFloat(0) > getUnsignedMaxValue(ResultWidth))
+            {
+                logArithmeticException();
+            }
+
+            break;
+        }
+        case llvm::Instruction::FPTrunc:
+        {
+            const auto&& CastInst = llvm::dyn_cast<llvm::CastInst>(instruction);
+            const TypedValue Val = workItem->getOperand(instruction->getOperand(0));
+
+            if((CastInst->getDestTy()->isFloatTy() && abs(Val.getFloat(0)) > FLT_MAX) ||
+               (CastInst->getDestTy()->isHalfTy() && abs(Val.getFloat(0)) > HALF_MAX))
+            {
+                logArithmeticException();
+            }
+
+            break;
+        }
+
         //case llvm::Instruction::FRem:
         //case llvm::Instruction::FSub:
 
@@ -165,9 +211,37 @@ void ArithmeticExceptions::instructionExecuted(
 
             break;
         }
+        case llvm::Instruction::SIToFP:
+        {
+            const auto&& CastInst = llvm::dyn_cast<llvm::CastInst>(instruction);
+            const TypedValue Val = workItem->getOperand(instruction->getOperand(0));
 
-        //case llvm::Instruction::SIToFP:
+            double MaxValue = 0;
 
+            if(CastInst->getDestTy()->isDoubleTy())
+            {
+                MaxValue = DBL_MAX;
+            }
+            else if(CastInst->getDestTy()->isFloatTy())
+            {
+                MaxValue = FLT_MAX;
+            }
+            else if(CastInst->getDestTy()->isHalfTy())
+            {
+                MaxValue = HALF_MAX;
+            }
+            else
+            {
+                FATAL_ERROR("Unknown float type");
+            }
+
+            if(abs(Val.getSInt(0)) > MaxValue)
+            {
+                logArithmeticException();
+            }
+
+            break;
+        }
         case llvm::Instruction::SRem:
         {
             const auto&& BinOp = llvm::dyn_cast<llvm::BinaryOperator>(instruction);
@@ -228,9 +302,37 @@ void ArithmeticExceptions::instructionExecuted(
 
             break;
         }
+        case llvm::Instruction::UIToFP:
+        {
+            const auto&& CastInst = llvm::dyn_cast<llvm::CastInst>(instruction);
+            const TypedValue Val = workItem->getOperand(instruction->getOperand(0));
 
-        //case llvm::Instruction::UIToFP:
+            double MaxValue = 0;
 
+            if(CastInst->getDestTy()->isDoubleTy())
+            {
+                MaxValue = DBL_MAX;
+            }
+            else if(CastInst->getDestTy()->isFloatTy())
+            {
+                MaxValue = FLT_MAX;
+            }
+            else if(CastInst->getDestTy()->isHalfTy())
+            {
+                MaxValue = HALF_MAX;
+            }
+            else
+            {
+                FATAL_ERROR("Unknown float type");
+            }
+
+            if(Val.getUInt(0) > MaxValue)
+            {
+                logArithmeticException();
+            }
+
+            break;
+        }
         case llvm::Instruction::URem:
         {
             // Check for division by zero

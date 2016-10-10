@@ -12,6 +12,8 @@
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <vector>
+#include <sstream>
 
 #if defined(_WIN32) && !defined(__MINGW32__)
 #include <windows.h>
@@ -196,9 +198,16 @@ int main(int argc, char *argv[])
 
 static bool parseArguments(int argc, char *argv[])
 {
+  // Collect all diagnostic options before writing them to environment
+  std::vector<const char*> diagnosticOptions;
+
   for (int i = 1; i < argc; i++)
   {
-    if (!strcmp(argv[i], "--arithmetic-exceptions"))
+    if (!strncmp(argv[i], "-W", 2))
+    {
+      diagnosticOptions.push_back(argv[i]);
+	}
+    else if (!strcmp(argv[i], "--arithmetic-exceptions"))
     {
       setEnvironment("OCLGRIND_ARITHMETIC_EXCEPTIONS", "1");
     }
@@ -289,6 +298,15 @@ static bool parseArguments(int argc, char *argv[])
     {
       setEnvironment("OCLGRIND_QUICK", "1");
     }
+    else if (!strcmp(argv[i], "--stop-errors"))
+    {
+      if (++i >= argc)
+      {
+        cerr << "Missing argument to --stop-errors" << endl;
+        return false;
+      }
+      setEnvironment("OCLGRIND_STOP_ERRORS", argv[i]);
+    }
     else if (!strcmp(argv[i], "--uniform-writes"))
     {
       setEnvironment("OCLGRIND_UNIFORM_WRITES", "1");
@@ -334,6 +352,20 @@ static bool parseArguments(int argc, char *argv[])
 #endif
       break;
     }
+  }
+
+  // Set diagnostic options
+  if(diagnosticOptions.size())
+  {
+      std::stringstream options;
+      options << diagnosticOptions.front();
+
+      for(int i = 1; i < diagnosticOptions.size(); ++i)
+      {
+        options << " " << diagnosticOptions[i];
+      }
+
+      setEnvironment("OCLGRIND_DIAGNOSTIC_OPTIONS", options.str().c_str());
   }
 
 #if defined(_WIN32) && !defined(__MINGW32__)

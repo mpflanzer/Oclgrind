@@ -17,7 +17,12 @@
 #include <dlfcn.h>
 #endif
 
+#if LLVM_VERSION < 40
 #include "llvm/Bitcode/ReaderWriter.h"
+#else
+#include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#endif
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
@@ -35,6 +40,7 @@
 
 #include "Context.h"
 #include "Kernel.h"
+#include "Memory.h"
 #include "Program.h"
 #include "WorkItem.h"
 
@@ -50,8 +56,8 @@
 #endif
 
 #define REMAP_INPUT "input.cl"
-#define CLC_H_PATH REMAP_DIR"clc.h"
-extern const char CLC_H_DATA[];
+#define OPENCL_C_H_PATH REMAP_DIR"opencl-c.h"
+extern const char OPENCL_C_H_DATA[];
 
 const char *EXTENSIONS[] =
 {
@@ -61,6 +67,8 @@ const char *EXTENSIONS[] =
   "cl_khr_global_int32_extended_atomics",
   "cl_khr_local_int32_base_atomics",
   "cl_khr_local_int32_extended_atomics",
+  "cl_khr_int64_base_atomics",
+  "cl_khr_int64_extended_atomics",
   "cl_khr_byte_addressable_store",
 };
 
@@ -74,6 +82,9 @@ Program::Program(const Context *context, llvm::Module *module)
   m_buildOptions = "";
   m_buildStatus = CL_BUILD_SUCCESS;
   m_uid = generateUID();
+  m_totalProgramScopeVarSize = 0;
+
+  allocateProgramScopeVars();
 }
 
 Program::Program(const Context *context, const string& source)
@@ -84,6 +95,7 @@ Program::Program(const Context *context, const string& source)
   m_buildOptions = "";
   m_buildStatus = CL_BUILD_NONE;
   m_uid = 0;
+  m_totalProgramScopeVarSize = 0;
 
   // Split source into individual lines
   m_sourceLines.clear();
@@ -101,6 +113,122 @@ Program::Program(const Context *context, const string& source)
 Program::~Program()
 {
   clearInterpreterCache();
+  deallocateProgramScopeVars();
+}
+
+void Program::allocateProgramScopeVars()
+{
+  deallocateProgramScopeVars();
+
+  Memory *globalMemory = m_context->getGlobalMemory();
+
+  // Create the pointer values for each global variable
+  llvm::Module::const_global_iterator itr;
+  for (itr = m_module->global_begin(); itr != m_module->global_end(); itr++)
+  {
+    unsigned addrspace = itr->getType()->getPointerAddressSpace();
+    if (addrspace != AddrSpaceGlobal && addrspace != AddrSpaceConstant)
+      continue;
+
+    // Allocate global variable
+    const llvm::Type *type = itr->getType()->getPointerElementType();
+    size_t size = getTypeSize(type);
+    size_t ptr = globalMemory->allocateBuffer(size);
+    m_totalProgramScopeVarSize += size;
+
+    // Create pointer value
+    TypedValue ptrValue =
+    {
+      sizeof(size_t), 1, new uint8_t[sizeof(size_t)]
+    };
+    ptrValue.setPointer(ptr);
+    m_programScopeVars[&*itr] = ptrValue;
+  }
+
+  try
+  {
+    // Initialize global variables
+    for (auto itr  = m_programScopeVars.begin();
+              itr != m_programScopeVars.end();
+              itr++)
+    {
+      auto var = llvm::cast<llvm::GlobalVariable>(itr->first);
+      const llvm::Constant *initializer = var->getInitializer();
+      if (!initializer)
+        continue;
+
+      size_t varptr = itr->second.getPointer();
+      if (initializer->getType()->getTypeID() == llvm::Type::PointerTyID)
+      {
+        size_t ptr = resolveConstantPointer(initializer, m_programScopeVars);
+        globalMemory->store((uint8_t*)&ptr, varptr, sizeof(size_t));
+      }
+      else
+      {
+        size_t size = getTypeSize(initializer->getType());
+        uint8_t *data = new uint8_t[size];
+        getConstantData((uint8_t*)data, (const llvm::Constant*)initializer);
+        globalMemory->store(data, varptr, size);
+        delete[] data;
+      }
+    }
+  }
+  catch (FatalError& err)
+  {
+    cerr << endl << "OCLGRIND FATAL ERROR "
+         << "(" << err.getFile() << ":" << err.getLine() << ")"
+         << endl << err.what()
+         << endl << "When initializing program scope global variables"
+         << endl;
+  }
+}
+
+// Utility to split a string up to the next unquoted space
+// After this returns, input will point to the start of the next string (no
+// leading spaces), and next will point to where the next string will start.
+// Modifies the content of input in place.
+void split_token(char *input, char **next)
+{
+  char *output = input;
+
+  // Strip leading spaces
+  while (*input == ' ')
+    input++;
+
+  // Loop until end of string
+  bool quoted = false;
+  while (*input != '\0')
+  {
+    // Stop at space, unless we're in quotes
+    if (*input == ' ' && !quoted)
+      break;
+
+    if (*input == '"')
+    {
+      // Enter/exit quoted region, don't emit quote
+      quoted = !quoted;
+    }
+    else
+    {
+      // Check for escaped space
+      if (*input == '\\' && *(input+1) == ' ')
+        input++;
+
+      // Copy character to output string
+      *output = *input;
+      output++;
+    }
+
+    input++;
+  }
+
+  // Set *next to start of next potential string
+  *next = input;
+  if (**next != '\0')
+    (*next)++;
+
+  // Split token with null terminator
+  *output = '\0';
 }
 
 bool Program::build(const char *options, list<Header> headers)
@@ -116,6 +244,9 @@ bool Program::build(const char *options, list<Header> headers)
   if (m_source.empty() && m_module)
   {
     m_buildStatus = CL_BUILD_SUCCESS;
+
+    allocateProgramScopeVars();
+
     return true;
   }
 
@@ -130,33 +261,48 @@ bool Program::build(const char *options, list<Header> headers)
 
   // Set compiler arguments
   vector<const char*> args;
-  args.push_back("-cl-std=CL1.2");
   args.push_back("-cl-kernel-arg-info");
+  args.push_back("-D__IMAGE_SUPPORT__=1");
+  args.push_back("-D__OPENCL_VERSION__=120");
   args.push_back("-fno-builtin");
-#if LLVM_VERSION >= 38
+  args.push_back("-fgnu89-inline");
   args.push_back("-debug-info-kind=standalone");
-#else
-  args.push_back("-g");
-#endif
+  args.push_back("-dwarf-column-info");
   args.push_back("-triple");
   if (sizeof(size_t) == 4)
     args.push_back("spir-unknown-unknown");
   else
     args.push_back("spir64-unknown-unknown");
 
+#if ! IS_BIG_ENDIAN
+  args.push_back("-D__ENDIAN_LITTLE__=1");
+#endif
+
+#if LLVM_VERSION < 40
   // Define extensions
   for (unsigned i = 0; i < sizeof(EXTENSIONS)/sizeof(const char*); i++)
   {
     args.push_back("-D");
     args.push_back(EXTENSIONS[i]);
   }
+#else
+  // Disable all extensions
+  std::string cl_ext("-cl-ext=-all");
+  // Explicitly enable supported extensions
+  for (unsigned i = 0; i < sizeof(EXTENSIONS)/sizeof(const char*); i++)
+  {
+    cl_ext += ",+" + std::string(EXTENSIONS[i]);
+  }
+  args.push_back(cl_ext.c_str());
+#endif
 
   // Disable Clang's optimizations.
   // We will manually run optimization passes and legalize the IR later.
   args.push_back("-O0");
 
   bool optimize = true;
-  bool cl12     = true;
+  const char *clstd = NULL;
+  m_requiresUniformWorkGroups = false;
 
   // Disable optimizations by default if in interactive mode
   if (checkEnv("OCLGRIND_INTERACTIVE"))
@@ -171,8 +317,17 @@ bool Program::build(const char *options, list<Header> headers)
     extraOptions = "";
   char *tmpOptions = new char[strlen(mainOptions) + strlen(extraOptions) + 2];
   sprintf(tmpOptions, "%s %s", mainOptions, extraOptions);
-  for (char *opt = strtok(tmpOptions, " "); opt; opt = strtok(NULL, " "))
+  char *opt = tmpOptions;
+  char *next = NULL;
+  while (strlen(opt) > 0)
   {
+    // Split token up to next unquoted space
+    if (next)
+      opt = next;
+    split_token(opt, &next);
+    if (!strlen(opt))
+      break;
+
     // Ignore options that break PCH
     if (strcmp(opt, "-cl-fast-relaxed-math") != 0 &&
         strcmp(opt, "-cl-finite-math-only") != 0 &&
@@ -191,20 +346,21 @@ bool Program::build(const char *options, list<Header> headers)
         continue;
       }
 
-#if LLVM_VERSION >= 37
       // Clang no longer supports -cl-no-signed-zeros
       if (strcmp(opt, "-cl-no-signed-zeros") == 0)
         continue;
-#endif
+
+      // Check for -cl-uniform-work-group-size flag
+      if (strcmp(opt, "-cl-uniform-work-group-size") == 0)
+      {
+        m_requiresUniformWorkGroups = true;
+        continue;
+      }
 
       // Check for -cl-std flag
       if (strncmp(opt, "-cl-std=", 8) == 0)
       {
-        if (strcmp(opt+8, "CL1.2") != 0)
-        {
-          cl12 = false;
-          args.push_back(opt);
-        }
+        clstd = opt;
         continue;
       }
 
@@ -212,15 +368,21 @@ bool Program::build(const char *options, list<Header> headers)
     }
   }
 
-  if (cl12)
+  if (!clstd)
   {
-    args.push_back("-cl-std=CL1.2");
+    clstd = "-cl-std=CL1.2";
   }
+  args.push_back(clstd);
+
+  // If compiling for OpenCL 1.X, require uniform work-groups
+  if (strncmp(clstd, "-cl-std=CL1.", 12) == 0)
+    m_requiresUniformWorkGroups = true;
 
   // Pre-compiled header
   char *pchdir = NULL;
   char *pch    = NULL;
-  if (!checkEnv("OCLGRIND_DISABLE_PCH") && cl12)
+  if (!checkEnv("OCLGRIND_DISABLE_PCH") &&
+      (!strcmp(clstd, "-cl-std=CL1.2") || !strcmp(clstd, "-cl-std=CL2.0")))
   {
     const char *pchdirOverride = getenv("OCLGRIND_PCH_DIR");
     if (pchdirOverride)
@@ -266,8 +428,9 @@ bool Program::build(const char *options, list<Header> headers)
     if (pchdir)
     {
       // Select precompiled header
-      pch = new char[strlen(pchdir) + 20];
-      sprintf(pch, "%s/clc%d.pch", pchdir, (sizeof(size_t) == 4 ? 32 : 64));
+      pch = new char[strlen(pchdir) + 24];
+      sprintf(pch, "%s/opencl-c-%s-%d.pch",
+              pchdir, clstd+10, (sizeof(size_t) == 4 ? 32 : 64));
 
       // Check if precompiled header exists
       ifstream pchfile(pch);
@@ -297,9 +460,9 @@ bool Program::build(const char *options, list<Header> headers)
   }
   else
   {
-    // Fall back to embedded clc.h
+    // Fall back to embedded opencl-c.h
     args.push_back("-include");
-    args.push_back(CLC_H_PATH);
+    args.push_back(OPENCL_C_H_PATH);
   }
 
   // Append input file to arguments (remapped later)
@@ -318,7 +481,12 @@ bool Program::build(const char *options, list<Header> headers)
   compiler.createDiagnostics(diagConsumer, false);
 
   // Create compiler invocation
+#if LLVM_VERSION < 40
   clang::CompilerInvocation *invocation = new clang::CompilerInvocation;
+#else
+  std::shared_ptr<clang::CompilerInvocation> invocation(
+      new clang::CompilerInvocation);
+#endif
   clang::CompilerInvocation::CreateFromArgs(*invocation,
                                             &args[0], &args[0] + args.size(),
                                             compiler.getDiagnostics());
@@ -336,9 +504,10 @@ bool Program::build(const char *options, list<Header> headers)
                                                    buffer.release());
   }
 
-  // Remap clc.h
-  buffer = llvm::MemoryBuffer::getMemBuffer(CLC_H_DATA, "", false);
-  compiler.getPreprocessorOpts().addRemappedFile(CLC_H_PATH, buffer.release());
+  // Remap opencl-c.h
+  buffer = llvm::MemoryBuffer::getMemBuffer(OPENCL_C_H_DATA, "", false);
+  compiler.getPreprocessorOpts().addRemappedFile(
+    OPENCL_C_H_PATH, buffer.release());
 
   // Remap input file
   buffer = llvm::MemoryBuffer::getMemBuffer(m_source, "", false);
@@ -363,10 +532,6 @@ bool Program::build(const char *options, list<Header> headers)
       // Initialize pass managers
       llvm::legacy::PassManager modulePasses;
       llvm::legacy::FunctionPassManager functionPasses(m_module.get());
-#if LLVM_VERSION < 37
-      modulePasses.add(new llvm::DataLayoutPass());
-      functionPasses.add(new llvm::DataLayoutPass());
-#endif
 
       // Populate pass managers with -Oz
       llvm::PassManagerBuilder builder;
@@ -385,6 +550,8 @@ bool Program::build(const char *options, list<Header> headers)
     }
 
     removeLValueLoads();
+
+    allocateProgramScopeVars();
 
     m_buildStatus = CL_BUILD_SUCCESS;
   }
@@ -469,10 +636,10 @@ Program* Program::createFromBitcode(const Context *context,
   }
 
   // Parse bitcode into IR module
-#if LLVM_VERSION < 37
-  llvm::ErrorOr<llvm::Module*> module =
-#else
+#if LLVM_VERSION < 40
   llvm::ErrorOr<unique_ptr<llvm::Module>> module =
+#else
+  llvm::Expected<unique_ptr<llvm::Module>> module =
 #endif
     parseBitcodeFile(buffer->getMemBufferRef(), *context->getLLVMContext());
   if (!module)
@@ -480,11 +647,7 @@ Program* Program::createFromBitcode(const Context *context,
     return NULL;
   }
 
-#if LLVM_VERSION < 37
-  return new Program(context, module.get());
-#else
   return new Program(context, module.get().release());
-#endif
 }
 
 Program* Program::createFromBitcodeFile(const Context *context,
@@ -499,10 +662,10 @@ Program* Program::createFromBitcodeFile(const Context *context,
   }
 
   // Parse bitcode into IR module
-#if LLVM_VERSION < 37
-  llvm::ErrorOr<llvm::Module*> module =
-#else
+#if LLVM_VERSION < 40
   llvm::ErrorOr<unique_ptr<llvm::Module>> module =
+#else
+  llvm::Expected<unique_ptr<llvm::Module>> module =
 #endif
     parseBitcodeFile(buffer->get()->getMemBufferRef(),
                      *context->getLLVMContext());
@@ -511,11 +674,7 @@ Program* Program::createFromBitcodeFile(const Context *context,
     return NULL;
   }
 
-#if LLVM_VERSION < 37
-  return new Program(context, module.get());
-#else
   return new Program(context, module.get().release());
-#endif
 }
 
 Program* Program::createFromPrograms(const Context *context,
@@ -523,21 +682,13 @@ Program* Program::createFromPrograms(const Context *context,
 {
   llvm::Module *module = new llvm::Module("oclgrind_linked",
                                           *context->getLLVMContext());
-#if LLVM_VERSION < 38
-  llvm::Linker linker(module);
-#else
   llvm::Linker linker(*module);
-#endif
 
   // Link modules
   list<const Program*>::iterator itr;
   for (itr = programs.begin(); itr != programs.end(); itr++)
   {
-#if LLVM_VERSION < 38
-    llvm::Module *m = llvm::CloneModule((*itr)->m_module.get());
-#else
     unique_ptr<llvm::Module> m = llvm::CloneModule((*itr)->m_module.get());
-#endif
     if (linker.linkInModule(std::move(m)))
     {
       return NULL;
@@ -554,37 +705,7 @@ Kernel* Program::createKernel(const string name)
 
   // Iterate over functions in module to find kernel
   llvm::Function *function = NULL;
-#if LLVM_VERSION < 37
-  // Query the SPIR kernel list
-  llvm::NamedMDNode* tuple = m_module->getNamedMetadata("opencl.kernels");
-  // No kernels in module
-  if (!tuple)
-    return NULL;
 
-  for (unsigned i = 0; i < tuple->getNumOperands(); ++i)
-  {
-    llvm::MDNode* kernel = tuple->getOperand(i);
-
-    llvm::ConstantAsMetadata *cam =
-      llvm::dyn_cast<llvm::ConstantAsMetadata>(kernel->getOperand(0).get());
-    if (!cam)
-      continue;
-
-    llvm::Function *kernelFunction =
-      llvm::dyn_cast<llvm::Function>(cam->getValue());
-
-    // Shouldn't really happen - this would mean an invalid Module as input
-    if (!kernelFunction)
-      continue;
-
-    // Is this the kernel we want?
-    if (kernelFunction->getName() == name)
-    {
-      function = kernelFunction;
-      break;
-    }
-  }
-#else
   for (auto F = m_module->begin(); F != m_module->end(); F++)
   {
     if (F->getCallingConv() == llvm::CallingConv::SPIR_KERNEL &&
@@ -594,7 +715,6 @@ Kernel* Program::createKernel(const string name)
       break;
     }
   }
-#endif
 
   if (function == NULL)
   {
@@ -621,6 +741,19 @@ Kernel* Program::createKernel(const string name)
          << endl;
     return NULL;
   }
+}
+
+void Program::deallocateProgramScopeVars()
+{
+  for (auto psv  = m_programScopeVars.begin();
+            psv != m_programScopeVars.end();
+            psv++)
+  {
+    m_context->getGlobalMemory()->deallocateBuffer(psv->second.getPointer());
+    delete[] psv->second.data;
+  }
+  m_programScopeVars.clear();
+  m_totalProgramScopeVarSize = 0;
 }
 
 void Program::getBinary(unsigned char *binary) const
@@ -685,33 +818,6 @@ const InterpreterCache* Program::getInterpreterCache(
 list<string> Program::getKernelNames() const
 {
   list<string> names;
-
-#if LLVM_VERSION < 37
-  // Query the SPIR kernel list
-  llvm::NamedMDNode* tuple = m_module->getNamedMetadata("opencl.kernels");
-
-  if (tuple)
-  {
-    for (unsigned i = 0; i < tuple->getNumOperands(); ++i)
-    {
-      llvm::MDNode* kernel = tuple->getOperand(i);
-
-      llvm::ConstantAsMetadata *cam =
-      llvm::dyn_cast<llvm::ConstantAsMetadata>(kernel->getOperand(0).get());
-      if (!cam)
-        continue;
-
-      llvm::Function *kernelFunction =
-        llvm::dyn_cast<llvm::Function>(cam->getValue());
-
-      // Shouldn't really happen - this would mean an invalid Module as input
-      if (!kernelFunction)
-        continue;
-
-      names.push_back(kernelFunction->getName());
-    }
-  }
-#else
   for (auto F = m_module->begin(); F != m_module->end(); F++)
   {
     if (F->getCallingConv() == llvm::CallingConv::SPIR_KERNEL)
@@ -719,8 +825,6 @@ list<string> Program::getKernelNames() const
       names.push_back(F->getName());
     }
   }
-#endif
-
   return names;
 }
 
@@ -728,18 +832,7 @@ unsigned int Program::getNumKernels() const
 {
   assert(m_module);
 
-#if LLVM_VERSION < 37
-  // Extract kernels from metadata
-  llvm::NamedMDNode* tuple = m_module->getNamedMetadata("opencl.kernels");
-
-  // No kernels in module
-  if (!tuple)
-    return 0;
-
-  return tuple->getNumOperands();
-#else
   unsigned int num = 0;
-
   for (auto F = m_module->begin(); F != m_module->end(); F++)
   {
     if (F->getCallingConv() == llvm::CallingConv::SPIR_KERNEL)
@@ -747,9 +840,12 @@ unsigned int Program::getNumKernels() const
       num++;
     }
   }
-
   return num;
-#endif
+}
+
+const TypedValue& Program::getProgramScopeVar(const llvm::Value *variable) const
+{
+  return m_programScopeVars.at(variable);
 }
 
 const string& Program::getSource() const
@@ -768,6 +864,11 @@ const char* Program::getSourceLine(size_t lineNumber) const
 size_t Program::getNumSourceLines() const
 {
   return m_sourceLines.size();
+}
+
+size_t Program::getTotalProgramScopeVarSize() const
+{
+  return m_totalProgramScopeVarSize;
 }
 
 unsigned long Program::getUID() const
@@ -825,6 +926,11 @@ void Program::removeLValueLoads()
   }
 }
 
+bool Program::requiresUniformWorkGroups() const
+{
+  return m_requiresUniformWorkGroups;
+}
+
 void Program::scalarizeAggregateStore(llvm::StoreInst *store)
 {
   llvm::IntegerType *gepIndexType = (sizeof(size_t)==8) ?
@@ -852,9 +958,7 @@ void Program::scalarizeAggregateStore(llvm::StoreInst *store)
       }
       indices.push_back(index);
       scalarPtr = llvm::GetElementPtrInst::Create(
-#if LLVM_VERSION > 36
         gep->getPointerOperandType()->getPointerElementType(),
-#endif
         gep->getPointerOperand(), indices);
     }
     else
@@ -864,9 +968,7 @@ void Program::scalarizeAggregateStore(llvm::StoreInst *store)
       indices.push_back(llvm::ConstantInt::getSigned(gepIndexType, 0));
       indices.push_back(index);
       scalarPtr = llvm::GetElementPtrInst::Create(
-#if LLVM_VERSION > 36
         vectorPtr->getType()->getPointerElementType(),
-#endif
         vectorPtr, indices);
     }
     scalarPtr->setDebugLoc(store->getDebugLoc());
@@ -984,9 +1086,7 @@ void Program::scalarizeAggregateStore(llvm::StoreInst *store)
         }
         gepIndices.push_back(llvm::ConstantInt::getSigned(gepIndexType, index));
         scalarPtr = llvm::GetElementPtrInst::Create(
-#if LLVM_VERSION > 36
           gep->getPointerOperandType()->getPointerElementType(),
-#endif
           gep->getPointerOperand(), gepIndices);
       }
       else
@@ -996,9 +1096,7 @@ void Program::scalarizeAggregateStore(llvm::StoreInst *store)
         gepIndices.push_back(llvm::ConstantInt::getSigned(gepIndexType, 0));
         gepIndices.push_back(llvm::ConstantInt::getSigned(gepIndexType, index));
         scalarPtr = llvm::GetElementPtrInst::Create(
-#if LLVM_VERSION > 36
           vectorPtr->getType()->getPointerElementType(),
-#endif
           vectorPtr, gepIndices);
       }
       scalarPtr->setDebugLoc(store->getDebugLoc());

@@ -18,6 +18,7 @@
 #if defined(_WIN32) && !defined(__MINGW32__)
 #include <windows.h>
 #else
+#include <limits.h>
 #include <unistd.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -381,6 +382,22 @@ static bool parseArguments(int argc, char *argv[])
   return true;
 }
 
+static void stripLastComponent(string& path)
+{
+  size_t slash;
+#if defined(_WIN32) && !defined(__MINGW32__)
+  if ((slash = path.find_last_of('\\')) == string::npos)
+#else
+  if ((slash = path.find_last_of('/')) == string::npos)
+#endif
+  {
+    cerr << "[Oclgrind] Failed to get path to library directory" << endl;
+    exit(1);
+  }
+
+  path.resize(slash);
+}
+
 static string getLibDirPath()
 {
   string libdir;
@@ -392,41 +409,35 @@ static string getLibDirPath()
   if (GetLastError() != ERROR_SUCCESS)
     die("getting path to Oclgrind installation");
   libdir = path;
-#elif defined(__APPLE__)
-  char path[4096];
-  uint32_t sz = 4096;
-  if (_NSGetExecutablePath(path, &sz))
+#else
+  char exepath[PATH_MAX];
+  char path[PATH_MAX];
+  // Get path to executable
+#if defined(__APPLE__)
+  uint32_t sz = PATH_MAX;
+  if (_NSGetExecutablePath(exepath, &sz))
+#else // not apple
+  if (readlink("/proc/self/exe", exepath, PATH_MAX) == -1)
+#endif
   {
     cerr << "[Oclgrind] Unable to get path to Oclgrind installation" << endl;
     exit(1);
   }
-  libdir = path;
-#else
-  char path[4096];
-  if (readlink("/proc/self/exe", path, 4096) == -1)
-  {
-    cerr << "[Oclgrind] Unable to get path to Oclgrind installation" << endl;
-    exit(1);
-  }
+  // Resolve symbolic links and normalise path
+  realpath(exepath, path);
   libdir = path;
 #endif
 
-  // Remove executable filename and containing directory
-  size_t slash;
-  for (int i = 0; i < 2; i++)
+  // Remove executable filename
+  stripLastComponent(libdir);
+
+  const char *testing = getenv("OCLGRIND_TESTING");
+  if (!testing)
   {
-#if defined(_WIN32) && !defined(__MINGW32__)
-    if ((slash = libdir.find_last_of('\\')) == string::npos)
-#else
-    if ((slash = libdir.find_last_of('/')) == string::npos)
-#endif
-      cerr << "[Oclgrind] Failed to get path to library directory" << endl;
-
-    libdir.resize(slash);
+    // Remove containing directory and append library directory
+    stripLastComponent(libdir);
+    libdir += "/lib" LIBDIR_SUFFIX;
   }
-
-  // Append library directory
-  libdir += "/lib" LIBDIR_SUFFIX;
 
   return libdir;
 }

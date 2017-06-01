@@ -22,10 +22,34 @@ endforeach(${test})
 set_tests_properties(${KERNEL_TESTS} PROPERTIES
     ENVIRONMENT "OCLGRIND_PCH_DIR=${CMAKE_BINARY_DIR}/include/oclgrind")
 
-# Expected failures
-set_tests_properties(
+if ("${LLVM_VERSION_MAJOR}" STREQUAL "4")
+  set(XFAIL
+      ${XFAIL}
+      bugs/byval_function_argument
+      bugs/const_gep_expr_pointee_type
+      bugs/multidim_array_in_struct
+      memcheck/static_array_padded_struct
+      misc/array
+      uninitialized/private_array_initializer_list
+  )
+endif()
+
+# Can't seem to get DIGlobalVariable in LLVM 3.9
+if ("${LLVM_VERSION_MAJOR}" STRLESS "4")
+  set(XFAIL ${XFAIL} interactive/struct_member)
+endif()
+
+# LLVM bug, exposed in 4.0, fixed in 5.0
+if ("${LLVM_VERSION_MAJOR}" STREQUAL "4")
+  set(XFAIL ${XFAIL} bugs/llvm_memcpyopt_bug)
+endif()
+
+set(XFAIL ${XFAIL}
     arithmetic/add
     arithmetic/mul
     arithmetic/ptr
     arithmetic/sub
-  PROPERTIES WILL_FAIL TRUE)
+)
+
+# Expected failures
+set_tests_properties(${XFAIL} PROPERTIES WILL_FAIL TRUE)

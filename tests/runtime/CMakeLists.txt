@@ -11,9 +11,13 @@ include_directories(../common)
 
 # Add runtime tests
 foreach(test
-  map_buffer)
+  build_program
+  map_buffer
+  sampler)
 
   add_executable(${test} ${test}.c ${COMMON_SOURCES})
+  target_compile_definitions(${test} PRIVATE
+                             "-DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
   target_link_libraries(${test} oclgrind-rt)
 
   # Generate test binaries in same dir as Oclgrind libraries on Windows
@@ -28,13 +32,14 @@ foreach(test
     NAME rt_${test}
     COMMAND
     ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/run_test.py
-    $<TARGET_FILE:oclgrind-kernel>
+    $<TARGET_FILE:oclgrind-exe>
     $<TARGET_FILE:${test}>)
 
   set_tests_properties(rt_${test} PROPERTIES DEPENDS ${test})
 
   # Set PCH directory
-  set_tests_properties(rt_${test} PROPERTIES
-      ENVIRONMENT "OCLGRIND_PCH_DIR=${CMAKE_BINARY_DIR}/include/oclgrind")
+  set(ENV "OCLGRIND_TESTING=1")
+  list(APPEND ENV "OCLGRIND_PCH_DIR=${CMAKE_BINARY_DIR}/include/oclgrind")
+  set_tests_properties(rt_${test} PROPERTIES ENVIRONMENT "${ENV}")
 
 endforeach(${test})

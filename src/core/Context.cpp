@@ -483,18 +483,14 @@ Context::Message& Context::Message::operator<<(
     }
     else
     {
-#if LLVM_VERSION > 36
       llvm::DILocation *loc = (llvm::DILocation*)md;
       unsigned lineNumber = loc->getLine();
+      unsigned columnNumber = loc->getColumn();
       llvm::StringRef filename = loc->getFilename();
-#else
-      llvm::DILocation loc((llvm::MDLocation*)md);
-      unsigned lineNumber = loc.getLineNumber();
-      llvm::StringRef filename = loc.getFilename();
-#endif
 
       *this << "At line " << dec << lineNumber
-           << " of " << filename.str() << ":" << endl;
+            << " (column " << columnNumber << ")"
+            << " of " << filename.str() << ":" << endl;
 
       // Get source line
       const Program *program = m_kernelInvocation->getKernel()->getProgram();

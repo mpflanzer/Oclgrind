@@ -14,14 +14,14 @@ import sys
 
 # Check arguments
 if len(sys.argv) != 3:
-  print('Usage: python run_test.py OCLGRIND-KERNEL TEST_EXE|TEST.sim')
+  print('Usage: python run_test.py OCLGRIND-EXE TEST_EXE|TEST.sim')
   sys.exit(1)
 if not os.path.isfile(sys.argv[2]):
   print('Test file not found')
   sys.exit(1)
 
 # Construct paths to test inputs/outputs
-oclgrind_kernel = sys.argv[1]
+oclgrind_exe    = sys.argv[1]
 test_full_path  = sys.argv[2]
 test_dir        = os.path.dirname(os.path.realpath(test_full_path))
 test_file       = os.path.basename(test_full_path)
@@ -29,6 +29,7 @@ test_name       = os.path.splitext(test_file)[0]
 current_dir     = os.getcwd()
 
 if test_file.endswith('.sim'):
+  test_inp = test_full_path[:-4] + '.inp'
   test_ref = test_full_path[:-4] + '.ref'
 else:
   if test_full_path[0] == '/':
@@ -36,6 +37,8 @@ else:
   else:
     rel_path = test_full_path
 
+  test_inp = os.path.dirname(os.path.abspath(__file__)) + os.path.sep \
+    + rel_path + '.inp'
   test_ref = os.path.dirname(os.path.abspath(__file__)) + os.path.sep \
     + rel_path + '.ref'
 
@@ -73,15 +76,30 @@ def run(output_suffix):
       raise
 
   out = open(test_out, 'w')
+  try:
+      inp = open(test_inp, 'r')
+  except:
+      inp = None
 
   # Run test
   if test_file.endswith('.sim'):
     os.chdir(test_dir)
-    retval = subprocess.call([oclgrind_kernel, test_file],
-                             stdout=out, stderr=out)
+
+    cmd = [oclgrind_exe]
+
+    # Add any additional arguments specified in the test file
+    first_line = open(test_file).readline()[:-1]
+    if first_line[:7] == '# ARGS:':
+        cmd.extend(first_line[8:].split(' '))
+
+    cmd.append(test_file)
+
+    retval = subprocess.call(cmd, stdout=out, stderr=out, stdin=inp)
+
     os.chdir(current_dir)
   else:
-    retval = subprocess.call([test_full_path], stdout=out, stderr=out)
+    retval = subprocess.call([oclgrind_exe,test_full_path],
+                             stdout=out, stderr=out, stdin=inp)
 
   out.close()
   if retval != 0:
@@ -105,7 +123,12 @@ def run(output_suffix):
       text = line[6:]
 
       # Find next non-blank line in output file
-      while not len(out[oi]):
+      while True:
+        if oi >= len(out):
+            print('Unexpected end of output when matching ' + line)
+            fail()
+        if len(out[oi]):
+            break
         oi += 1
 
       if type == 'ERROR':
@@ -134,6 +157,14 @@ def run(output_suffix):
       else:
         print('Invalid match type in reference file')
         fail()
+
+    # Check there are no more lines in output
+    while oi < len(out):
+      if len(out[oi]) > 0:
+          print('Unexpected output after all matches completed (line %d):' % oi)
+          print(out[oi])
+          fail()
+      oi += 1
 
 print('Running test with optimisations')
 run('')

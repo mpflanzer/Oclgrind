@@ -53,6 +53,8 @@ using namespace std;
   cl_khr_global_int32_extended_atomics \
   cl_khr_local_int32_base_atomics      \
   cl_khr_local_int32_extended_atomics  \
+  cl_khr_int64_base_atomics            \
+  cl_khr_int64_extended_atomics        \
   cl_khr_byte_addressable_store        \
   cl_khr_fp64"
 #define DEVICE_TYPE (CL_DEVICE_TYPE_CPU | \
@@ -216,6 +218,11 @@ clIcdGetPlatformIDsKHR
   cl_uint *num_platforms
 )
 {
+  if (platforms && num_entries < 1)
+  {
+    ReturnError(NULL, CL_INVALID_VALUE);
+  }
+
   if (!m_platform)
   {
     m_platform = new _cl_platform_id;
@@ -225,7 +232,7 @@ clIcdGetPlatformIDsKHR
     m_device->dispatch = m_dispatchTable;
   }
 
-  if (num_entries > 0)
+  if (platforms)
   {
     platforms[0] = m_platform;
   }
@@ -241,14 +248,6 @@ clIcdGetPlatformIDsKHR
 ////////////////////////////////////
 // OpenCL Runtime API Definitions //
 ////////////////////////////////////
-
-#ifndef CL_USE_DEPRECATED_OPENCL_1_0_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_0_APIS
-#endif
-
-#ifndef CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#endif
 
 CL_API_ENTRY void* CL_API_CALL
 clGetExtensionFunctionAddress
@@ -407,6 +406,7 @@ clGetDeviceInfo
     cl_platform_id clplatid;
     cl_device_partition_property cldevpartprop;
     cl_device_affinity_domain cldevaffdom;
+    cl_device_svm_capabilities svm;
   } result_data;
   // The result is actually a string that needs copying
   const char* str = 0;
@@ -462,7 +462,11 @@ clGetDeviceInfo
     break;
   case CL_DEVICE_MAX_WRITE_IMAGE_ARGS:
     result_size = sizeof(cl_uint);
-    result_data.cluint = 8;
+    result_data.cluint = 64;
+    break;
+  case CL_DEVICE_MAX_READ_WRITE_IMAGE_ARGS:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 64;
     break;
   case CL_DEVICE_MAX_MEM_ALLOC_SIZE:
     result_size = sizeof(cl_ulong);
@@ -489,7 +493,27 @@ clGetDeviceInfo
     break;
   case CL_DEVICE_MAX_SAMPLERS:
     result_size = sizeof(cl_uint);
-    result_data.sizet = 16;
+    result_data.cluint = 16;
+    break;
+  case CL_DEVICE_IMAGE_PITCH_ALIGNMENT:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 1;
+    break;
+  case CL_DEVICE_IMAGE_BASE_ADDRESS_ALIGNMENT:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 4;
+    break;
+  case CL_DEVICE_MAX_PIPE_ARGS:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 16;
+    break;
+  case CL_DEVICE_PIPE_MAX_ACTIVE_RESERVATIONS:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 1;
+    break;
+  case CL_DEVICE_PIPE_MAX_PACKET_SIZE:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 1024;
     break;
   case CL_DEVICE_MEM_BASE_ADDR_ALIGN:
     result_size = sizeof(cl_uint);
@@ -528,6 +552,14 @@ clGetDeviceInfo
     result_size = sizeof(cl_uint);
     result_data.cluint = 1024;
     break;
+  case CL_DEVICE_MAX_GLOBAL_VARIABLE_SIZE:
+    result_size = sizeof(size_t);
+    result_data.sizet = 64 * 1024;
+    break;
+  case CL_DEVICE_GLOBAL_VARIABLE_PREFERRED_TOTAL_SIZE:
+    result_size = sizeof(size_t);
+    result_data.sizet = MAX_GLOBAL_MEM_SIZE;
+    break;
   case CL_DEVICE_LOCAL_MEM_TYPE:
     result_size = sizeof(cl_device_local_mem_type);
     result_data.devicelocalmemtype = CL_LOCAL;
@@ -546,7 +578,11 @@ clGetDeviceInfo
     break;
   case CL_DEVICE_ENDIAN_LITTLE:
     result_size = sizeof(cl_bool);
+#if IS_BIG_ENDIAN
+    result_data.clbool = CL_FALSE;
+#else
     result_data.clbool = CL_TRUE;
+#endif
     break;
   case CL_DEVICE_AVAILABLE:
     result_size = sizeof(cl_bool);
@@ -560,9 +596,30 @@ clGetDeviceInfo
     result_size = sizeof(cl_device_exec_capabilities);
     result_data.cldevexeccap =  CL_EXEC_KERNEL | CL_EXEC_NATIVE_KERNEL;
     break;
-  case CL_DEVICE_QUEUE_PROPERTIES:
+  case CL_DEVICE_QUEUE_ON_HOST_PROPERTIES:
     result_size = sizeof(cl_command_queue_properties);
     result_data.clcmdqprop = CL_QUEUE_PROFILING_ENABLE;
+    break;
+  case CL_DEVICE_QUEUE_ON_DEVICE_PROPERTIES:
+    result_size = sizeof(cl_command_queue_properties);
+    result_data.clcmdqprop =
+      CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_PROFILING_ENABLE;
+    break;
+  case CL_DEVICE_QUEUE_ON_DEVICE_PREFERRED_SIZE:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 16 * 1024;
+    break;
+  case CL_DEVICE_QUEUE_ON_DEVICE_MAX_SIZE:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 256 * 1024;
+    break;
+  case CL_DEVICE_MAX_ON_DEVICE_QUEUES:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 1;
+    break;
+  case CL_DEVICE_MAX_ON_DEVICE_EVENTS:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 1024;
     break;
   case CL_DEVICE_NAME:
     result_size = sizeof(DEVICE_NAME);
@@ -668,6 +725,22 @@ clGetDeviceInfo
   case CL_DEVICE_PRINTF_BUFFER_SIZE:
     result_size = sizeof(size_t);
     result_data.sizet = 1024;
+    break;
+  case CL_DEVICE_SVM_CAPABILITIES:
+    result_size = sizeof(cl_device_svm_capabilities);
+    result_data.svm = CL_DEVICE_SVM_COARSE_GRAIN_BUFFER;
+    break;
+  case CL_DEVICE_PREFERRED_PLATFORM_ATOMIC_ALIGNMENT:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 0;
+    break;
+  case CL_DEVICE_PREFERRED_GLOBAL_ATOMIC_ALIGNMENT:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 0;
+    break;
+  case CL_DEVICE_PREFERRED_LOCAL_ATOMIC_ALIGNMENT:
+    result_size = sizeof(cl_uint);
+    result_data.cluint = 0;
     break;
   case CL_DEVICE_SPIR_VERSIONS:
     result_size = sizeof(DEVICE_SPIR_VERSIONS);
@@ -1494,7 +1567,7 @@ clCreateImage2D
     0,
     0,
     0,
-    NULL
+    {NULL}
   };
   return clCreateImage(context, flags,
                        image_format, &desc,
@@ -1527,7 +1600,7 @@ clCreateImage3D
     image_slice_pitch,
     0,
     0,
-    NULL
+    {NULL}
   };
   return clCreateImage(context, flags,
                        image_format, &desc,
@@ -1944,7 +2017,7 @@ clCreateSampler
 
   if (normalized_coords)
   {
-    bitfield |= 0x0001;
+    bitfield |= CLK_NORMALIZED_COORDS_TRUE;
   }
 
   switch (addressing_mode)
@@ -1952,16 +2025,16 @@ clCreateSampler
     case CL_ADDRESS_NONE:
       break;
     case CL_ADDRESS_CLAMP_TO_EDGE:
-      bitfield |= 0x0002;
+      bitfield |= CLK_ADDRESS_CLAMP_TO_EDGE;
       break;
     case CL_ADDRESS_CLAMP:
-      bitfield |= 0x0004;
+      bitfield |= CLK_ADDRESS_CLAMP;
       break;
     case CL_ADDRESS_REPEAT:
-      bitfield |= 0x0006;
+      bitfield |= CLK_ADDRESS_REPEAT;
       break;
     case CL_ADDRESS_MIRRORED_REPEAT:
-      bitfield |= 0x0008;
+      bitfield |= CLK_ADDRESS_MIRRORED_REPEAT;
       break;
     default:
       SetErrorArg(context, CL_INVALID_VALUE, addressing_mode);
@@ -1971,10 +2044,10 @@ clCreateSampler
   switch (filter_mode)
   {
     case CL_FILTER_NEAREST:
-      bitfield |= 0x0010;
+      bitfield |= CLK_FILTER_NEAREST;
       break;
     case CL_FILTER_LINEAR:
-      bitfield |= 0x0020;
+      bitfield |= CLK_FILTER_LINEAR;
       break;
     default:
       SetErrorArg(context, CL_INVALID_VALUE, filter_mode);
@@ -2618,6 +2691,7 @@ clGetProgramBuildInfo
   {
     cl_build_status status;
     cl_program_binary_type type;
+    size_t sizet;
   } result_data;
   const char* str = 0;
 
@@ -2638,6 +2712,10 @@ clGetProgramBuildInfo
   case CL_PROGRAM_BINARY_TYPE:
     result_size = sizeof(cl_program_binary_type);
     result_data.type = CL_PROGRAM_BINARY_TYPE_COMPILED_OBJECT;
+    break;
+  case CL_PROGRAM_BUILD_GLOBAL_VARIABLE_TOTAL_SIZE:
+    result_size = sizeof(size_t);
+    result_data.sizet = program->program->getTotalProgramScopeVarSize();
     break;
   default:
     ReturnErrorArg(program->context, CL_INVALID_VALUE, param_name);
@@ -2803,7 +2881,11 @@ clSetKernelArg
   const void *  arg_value
 ) CL_API_SUFFIX__VERSION_1_0
 {
-  // Check parameters
+  // Check parameters are valid
+  if (!kernel)
+  {
+    ReturnErrorArg(NULL, CL_INVALID_KERNEL, kernel);
+  }
   if (arg_index >= kernel->kernel->getNumArguments())
   {
     ReturnErrorInfo(kernel->program->context, CL_INVALID_ARG_INDEX,
@@ -4812,7 +4894,8 @@ clEnqueueNDRangeKernel
       ReturnErrorInfo(command_queue->context, CL_INVALID_GLOBAL_WORK_SIZE,
                       "global_work_size[" << i << "] = 0");
     }
-    if (local_work_size && global_work_size[i] % local_work_size[i])
+    if (kernel->kernel->getProgram()->requiresUniformWorkGroups() &&
+        local_work_size && global_work_size[i] % local_work_size[i])
     {
       ReturnErrorInfo(command_queue->context, CL_INVALID_WORK_GROUP_SIZE,
                       "local_work_size[" << i << "]=" << local_work_size[i] <<
@@ -5446,6 +5529,340 @@ clEnqueueReleaseDX9MediaSurfacesKHR
 
 #endif // DX extension functions
 
+
+/////////////////////
+// OpenCL 2.0 APIs //
+/////////////////////
+
+CL_API_ENTRY cl_command_queue CL_API_CALL
+clCreateCommandQueueWithProperties
+(
+  cl_context                  context,
+  cl_device_id                device,
+  const cl_queue_properties * properties,
+  cl_int *                    errcode_ret
+) CL_API_SUFFIX__VERSION_2_0
+{
+  // Check parameters
+  if (!context)
+  {
+    SetErrorArg(NULL, CL_INVALID_CONTEXT, context);
+    return NULL;
+  }
+  if (device != m_device)
+  {
+    SetErrorArg(context, CL_INVALID_DEVICE, device);
+    return NULL;
+  }
+
+  // Parse properties
+  cl_command_queue_properties props = 0;
+  unsigned i = 0;
+  while (properties && properties[i])
+  {
+    switch (properties[i++])
+    {
+    case CL_QUEUE_PROPERTIES:
+      if (properties[i] & CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE)
+      {
+        SetErrorInfo(context, CL_INVALID_QUEUE_PROPERTIES,
+                     "Out-of-order command queues not supported");
+        return NULL;
+      }
+      if (properties[i] &
+          (CL_QUEUE_ON_DEVICE|CL_QUEUE_ON_DEVICE_DEFAULT))
+      {
+        SetErrorInfo(context, CL_INVALID_QUEUE_PROPERTIES,
+                     "On device queues not implemented");
+        return NULL;
+      }
+      props = properties[i];
+      break;
+    case CL_QUEUE_SIZE:
+      SetErrorInfo(context, CL_INVALID_VALUE, "CL_QUEUE_SIZE not implemented");
+      return NULL;
+    default:
+      SetErrorInfo(context, CL_INVALID_VALUE, properties);
+      return NULL;
+    }
+    i++;
+  }
+
+  // Create command-queue object
+  cl_command_queue queue;
+  queue = new _cl_command_queue;
+  queue->queue = new oclgrind::Queue(context->context);
+  queue->dispatch = m_dispatchTable;
+  queue->properties = props;
+  queue->context = context;
+  queue->refCount = 1;
+
+  clRetainContext(context);
+
+  SetError(context, CL_SUCCESS);
+  return queue;
+}
+
+CL_API_ENTRY cl_mem CL_API_CALL
+clCreatePipe
+(
+  cl_context                 context,
+  cl_mem_flags               flags,
+  cl_uint                    pipe_packet_size,
+  cl_uint                    pipe_max_packets,
+  const cl_pipe_properties * properties,
+  cl_int *                   errcode_ret
+) CL_API_SUFFIX__VERSION_2_0
+{
+  SetErrorInfo(context, CL_INVALID_OPERATION, "Unimplemented OpenCL 2.0 API");
+  return NULL;
+}
+
+CL_API_ENTRY cl_int CL_API_CALL
+clGetPipeInfo
+(
+  cl_mem       pipe,
+  cl_pipe_info param_name,
+  size_t       param_value_size,
+  void *       param_value,
+  size_t *     param_value_size_ret
+) CL_API_SUFFIX__VERSION_2_0
+{
+  ReturnErrorInfo(NULL, CL_INVALID_OPERATION, "Unimplemented OpenCL 2.0 API");
+}
+
+CL_API_ENTRY void * CL_API_CALL
+clSVMAlloc
+(
+  cl_context       context,
+  cl_svm_mem_flags flags,
+  size_t           size,
+  cl_uint          alignment
+) CL_API_SUFFIX__VERSION_2_0
+{
+  notifyAPIError(context, CL_INVALID_OPERATION, __func__,
+                 "Unimplemented OpenCL 2.0 API");
+  return NULL;
+}
+
+CL_API_ENTRY void CL_API_CALL
+clSVMFree
+(
+  cl_context context,
+  void *     svm_pointer
+) CL_API_SUFFIX__VERSION_2_0
+{
+  notifyAPIError(context, CL_INVALID_OPERATION, __func__,
+                 "Unimplemented OpenCL 2.0 API");
+}
+
+CL_API_ENTRY cl_int CL_API_CALL
+clEnqueueSVMFree
+(
+  cl_command_queue command_queue,
+  cl_uint num_svm_pointers,
+  void* svm_pointers[],
+  void (CL_CALLBACK* pfn_free_func)(
+      cl_command_queue queue,
+      cl_uint num_svm_pointers,
+      void* svm_pointers[],
+      void* user_data),
+  void* user_data,
+  cl_uint num_events_in_wait_list,
+  const cl_event* event_wait_list,
+  cl_event* event
+) CL_API_SUFFIX__VERSION_2_0
+{
+  ReturnErrorInfo(command_queue->context, CL_INVALID_OPERATION,
+                  "Unimplemented OpenCL 2.0 API");
+}
+
+CL_API_ENTRY cl_int CL_API_CALL
+clEnqueueSVMMemcpy
+(
+  cl_command_queue  command_queue,
+  cl_bool           blocking_copy,
+  void *            dst_ptr,
+  const void *      src_ptr,
+  size_t            size,
+  cl_uint           num_events_in_wait_list,
+  const cl_event *  event_wait_list,
+  cl_event *        event
+) CL_API_SUFFIX__VERSION_2_0
+{
+  ReturnErrorInfo(command_queue->context, CL_INVALID_OPERATION,
+                  "Unimplemented OpenCL 2.0 API");
+}
+
+CL_API_ENTRY cl_int CL_API_CALL
+clEnqueueSVMMemFill
+(
+  cl_command_queue command_queue,
+  void *           svm_ptr,
+  const void *     pattern,
+  size_t           pattern_size,
+  size_t           size,
+  cl_uint          num_events_in_wait_list,
+  const cl_event * event_wait_list,
+  cl_event *       event
+) CL_API_SUFFIX__VERSION_2_0
+{
+  ReturnErrorInfo(command_queue->context, CL_INVALID_OPERATION,
+                  "Unimplemented OpenCL 2.0 API");
+}
+
+CL_API_ENTRY cl_int CL_API_CALL
+clEnqueueSVMMap
+(
+  cl_command_queue  command_queue,
+  cl_bool           blocking_map,
+  cl_map_flags      flags,
+  void *            svm_ptr,
+  size_t            size,
+  cl_uint           num_events_in_wait_list,
+  const cl_event *  event_wait_list,
+  cl_event *        event
+) CL_API_SUFFIX__VERSION_2_0
+{
+  ReturnErrorInfo(command_queue->context, CL_INVALID_OPERATION,
+                  "Unimplemented OpenCL 2.0 API");
+}
+
+CL_API_ENTRY cl_int CL_API_CALL
+clEnqueueSVMUnmap
+(
+  cl_command_queue command_queue,
+  void *           svm_ptr,
+  cl_uint          num_events_in_wait_list,
+  const cl_event * event_wait_list,
+  cl_event *       event
+) CL_API_SUFFIX__VERSION_2_0
+{
+  ReturnErrorInfo(command_queue->context, CL_INVALID_OPERATION,
+                  "Unimplemented OpenCL 2.0 API");
+}
+
+CL_API_ENTRY cl_sampler CL_API_CALL
+clCreateSamplerWithProperties
+(
+  cl_context                     context,
+  const cl_sampler_properties *  sampler_properties,
+  cl_int *                       errcode_ret
+) CL_API_SUFFIX__VERSION_2_0
+{
+  // Check parameters
+  if (!context)
+  {
+    SetErrorArg(NULL, CL_INVALID_CONTEXT, context);
+    return NULL;
+  }
+
+  cl_bool             normalized_coords = CL_TRUE;
+  cl_addressing_mode  addressing_mode   = CL_ADDRESS_CLAMP;
+  cl_filter_mode      filter_mode       = CL_FILTER_NEAREST;
+
+  // Parse properties
+  unsigned i = 0;
+  while (sampler_properties && sampler_properties[i])
+  {
+    switch (sampler_properties[i++])
+    {
+    case CL_SAMPLER_NORMALIZED_COORDS:
+      normalized_coords = sampler_properties[i];
+      break;
+    case CL_SAMPLER_ADDRESSING_MODE:
+      addressing_mode = sampler_properties[i];
+      break;
+    case CL_SAMPLER_FILTER_MODE:
+      filter_mode = sampler_properties[i];
+      break;
+    default:
+      SetErrorInfo(context, CL_INVALID_VALUE, sampler_properties);
+      return NULL;
+    }
+    i++;
+  }
+
+  // Create sampler bitfield
+  uint32_t bitfield = 0;
+
+  if (normalized_coords)
+  {
+    bitfield |= CLK_NORMALIZED_COORDS_TRUE;
+  }
+
+  switch (addressing_mode)
+  {
+    case CL_ADDRESS_NONE:
+      break;
+    case CL_ADDRESS_CLAMP_TO_EDGE:
+      bitfield |= CLK_ADDRESS_CLAMP_TO_EDGE;
+      break;
+    case CL_ADDRESS_CLAMP:
+      bitfield |= CLK_ADDRESS_CLAMP;
+      break;
+    case CL_ADDRESS_REPEAT:
+      bitfield |= CLK_ADDRESS_REPEAT;
+      break;
+    case CL_ADDRESS_MIRRORED_REPEAT:
+      bitfield |= CLK_ADDRESS_MIRRORED_REPEAT;
+      break;
+    default:
+      SetErrorArg(context, CL_INVALID_VALUE, sampler_properties);
+      return NULL;
+  }
+
+  switch (filter_mode)
+  {
+    case CL_FILTER_NEAREST:
+      bitfield |= CLK_FILTER_NEAREST;
+      break;
+    case CL_FILTER_LINEAR:
+      bitfield |= CLK_FILTER_LINEAR;
+      break;
+    default:
+      SetErrorArg(context, CL_INVALID_VALUE, sampler_properties);
+      return NULL;
+  }
+
+  // Create sampler
+  cl_sampler sampler = new _cl_sampler;
+  sampler->dispatch = m_dispatchTable;
+  sampler->context = context;
+  sampler->normCoords = normalized_coords;
+  sampler->addressMode = addressing_mode;
+  sampler->filterMode = filter_mode;
+  sampler->sampler = bitfield;
+
+  SetError(context, CL_SUCCESS);
+  return sampler;
+}
+
+CL_API_ENTRY cl_int CL_API_CALL
+clSetKernelArgSVMPointer
+(
+  cl_kernel    kernel,
+  cl_uint      arg_index,
+  const void * arg_value
+) CL_API_SUFFIX__VERSION_2_0
+{
+  ReturnErrorInfo(kernel->program->context, CL_INVALID_OPERATION,
+                  "Unimplemented OpenCL 2.0 API");
+}
+
+CL_API_ENTRY cl_int CL_API_CALL
+clSetKernelExecInfo
+(
+  cl_kernel            kernel,
+  cl_kernel_exec_info  param_name,
+  size_t               param_value_size,
+  const void *         param_value
+) CL_API_SUFFIX__VERSION_2_0
+{
+  ReturnErrorInfo(kernel->program->context, CL_INVALID_OPERATION,
+                  "Unimplemented OpenCL 2.0 API");
+}
+
 ////////////////////
 // Dispatch Table //
 ////////////////////
@@ -5604,6 +6021,32 @@ void *m_dispatchTable[] =
   DISPATCH_TABLE_ENTRY(NULL),
   DISPATCH_TABLE_ENTRY(NULL),
 #endif
+
+  // cl_khr_egl_image
+  DISPATCH_TABLE_ENTRY(NULL),
+  DISPATCH_TABLE_ENTRY(NULL),
+  DISPATCH_TABLE_ENTRY(NULL),
+
+  // cl_khr_egl_event
+  DISPATCH_TABLE_ENTRY(NULL),
+
+  // OpenCL 2.0
+  DISPATCH_TABLE_ENTRY(clCreateCommandQueueWithProperties),
+  DISPATCH_TABLE_ENTRY(clCreatePipe),
+  DISPATCH_TABLE_ENTRY(clGetPipeInfo),
+  DISPATCH_TABLE_ENTRY(clSVMAlloc),
+  DISPATCH_TABLE_ENTRY(clSVMFree),
+  DISPATCH_TABLE_ENTRY(clEnqueueSVMFree),
+  DISPATCH_TABLE_ENTRY(clEnqueueSVMMemcpy),
+  DISPATCH_TABLE_ENTRY(clEnqueueSVMMemFill),
+  DISPATCH_TABLE_ENTRY(clEnqueueSVMMap),
+  DISPATCH_TABLE_ENTRY(clEnqueueSVMUnmap),
+  DISPATCH_TABLE_ENTRY(clCreateSamplerWithProperties),
+  DISPATCH_TABLE_ENTRY(clSetKernelArgSVMPointer),
+  DISPATCH_TABLE_ENTRY(clSetKernelExecInfo),
+
+  // cl_khr_sub_groups
+  DISPATCH_TABLE_ENTRY(NULL),
 };
 
 #if defined(_WIN32) && !defined(OCLGRIND_ICD)

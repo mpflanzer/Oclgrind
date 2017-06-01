@@ -18,7 +18,6 @@
 
 #include "Kernel.h"
 #include "Program.h"
-#include "Memory.h"
 
 using namespace oclgrind;
 using namespace std;
@@ -45,8 +44,9 @@ Kernel::Kernel(const Program *program,
 
       break;
     }
+    case AddrSpaceGlobal:
     case AddrSpaceConstant:
-      m_constants.push_back(&*itr);
+      m_values[&*itr] = program->getProgramScopeVar(&*itr).clone();
       break;
     case AddrSpaceLocal:
     {
@@ -92,8 +92,6 @@ Kernel::Kernel(const Kernel& kernel)
  : m_program(kernel.m_program)
 {
   m_function = kernel.m_function;
-  m_constants = kernel.m_constants;
-  m_constantBuffers = kernel.m_constantBuffers;
   m_name = kernel.m_name;
   m_metadata = kernel.m_metadata;
 
@@ -123,51 +121,6 @@ bool Kernel::allArgumentsSet() const
     }
   }
   return true;
-}
-
-void Kernel::allocateConstants(Memory *memory)
-{
-  list<const llvm::GlobalVariable*>::const_iterator itr;
-  for (itr = m_constants.begin(); itr != m_constants.end(); itr++)
-  {
-    const llvm::Constant *initializer = (*itr)->getInitializer();
-    const llvm::Type *type = initializer->getType();
-
-    // Deallocate existing pointer
-    if (m_values.count(*itr))
-    {
-      delete[] m_values[*itr].data;
-    }
-
-    // Get initializer data
-    unsigned size = getTypeSize(type);
-    unsigned char *data = new unsigned char[size];
-    getConstantData(data, (const llvm::Constant*)initializer);
-
-    // Allocate buffer
-    TypedValue address = {
-      sizeof(size_t),
-      1,
-      new unsigned char[sizeof(size_t)]
-    };
-    size_t ptr = memory->allocateBuffer(size, 0, data);
-    address.setPointer(ptr);
-
-    m_values[*itr] = address;
-    m_constantBuffers.push_back(ptr);
-
-    delete[] data;
-  }
-}
-
-void Kernel::deallocateConstants(Memory *memory)
-{
-  list<size_t>::const_iterator itr;
-  for (itr = m_constantBuffers.begin(); itr != m_constantBuffers.end(); itr++)
-  {
-    memory->deallocateBuffer(*itr);
-  }
-  m_constantBuffers.clear();
 }
 
 const llvm::Argument* Kernel::getArgument(unsigned int index) const
@@ -242,7 +195,10 @@ unsigned int Kernel::getArgumentAddressQualifier(unsigned int index) const
 const llvm::Metadata* Kernel::getArgumentMetadata(string name,
                                                   unsigned int index) const
 {
-#if LLVM_VERSION < 39
+  llvm::MDNode *node = m_function->getMetadata(name);
+  if (node)
+    return node->getOperand(index);
+
   if (!m_metadata)
   {
     return NULL;
@@ -263,12 +219,6 @@ const llvm::Metadata* Kernel::getArgumentMetadata(string name,
     }
   }
   return NULL;
-#else
-  llvm::MDNode *node = m_function->getMetadata(name);
-  if (!node)
-    return NULL;
-  return node->getOperand(index);
-#endif
 }
 
 const llvm::StringRef Kernel::getArgumentName(unsigned int index) const
@@ -288,13 +238,11 @@ const llvm::StringRef Kernel::getArgumentTypeName(unsigned int index) const
   }
 
   llvm::StringRef name = llvm::dyn_cast<llvm::MDString>(md)->getString();
-#if LLVM_VERSION >= 39
   size_t imgStart = name.find(" image");
   if (imgStart != llvm::StringRef::npos)
   {
     name = name.substr(imgStart+1);
   }
-#endif
   return name;
 }
 
@@ -308,6 +256,11 @@ unsigned int Kernel::getArgumentTypeQualifier(unsigned int index) const
   {
     return -1;
   }
+
+  // Ignore type qualifiers for non-pointer arguments
+  const llvm::Argument *arg = getArgument(index);
+  if (!arg->getType()->isPointerTy() || arg->hasByValAttr())
+    return CL_KERNEL_ARG_TYPE_NONE;
 
   // Get qualifiers
   const llvm::MDString *str = llvm::dyn_cast<llvm::MDString>(md);
@@ -453,7 +406,24 @@ void Kernel::setArgument(unsigned int index, TypedValue value)
     delete[] m_values[argument].data;
   }
 
-  m_values[argument] = value.clone();
+#if LLVM_VERSION >= 40
+  if (getArgumentTypeName(index).str() == "sampler_t")
+  {
+    // We store the actual sampler i32 value after the pointer value
+    TypedValue sampler;
+    sampler.size = sizeof(size_t);
+    sampler.num = 1;
+    sampler.data = new unsigned char[sizeof(size_t) + 4];
+    sampler.setPointer((size_t)(sampler.data + sizeof(size_t)));
+    memcpy(sampler.data+sizeof(size_t), value.data, 4);
+
+    m_values[argument] = sampler;
+  }
+  else
+#endif
+  {
+    m_values[argument] = value.clone();
+  }
 }
 
 TypedValueMap::const_iterator Kernel::values_begin() const

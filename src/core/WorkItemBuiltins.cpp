@@ -18,9 +18,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Metadata.h"
-#if LLVM_VERSION > 36
 #include "llvm/IR/DebugInfoMetadata.h"
-#endif
 
 #include "CL/cl.h"
 #include "Context.h"
@@ -32,18 +30,6 @@
 
 using namespace oclgrind;
 using namespace std;
-
-#define CLK_NORMALIZED_COORDS_TRUE 0x0001
-
-#define CLK_ADDRESS_NONE 0x0000
-#define CLK_ADDRESS_CLAMP_TO_EDGE 0x0002
-#define CLK_ADDRESS_CLAMP 0x0004
-#define CLK_ADDRESS_REPEAT 0x0006
-#define CLK_ADDRESS_MIRRORED_REPEAT 0x0008
-#define CLK_ADDRESS_MASK 0x000E
-
-#define CLK_FILTER_NEAREST 0x0010
-#define CLK_FILTER_LINEAR 0x0020
 
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795
@@ -275,161 +261,88 @@ namespace oclgrind
     //////////////////////
     // Atomic Functions //
     //////////////////////
-
-    DEFINE_BUILTIN(atomic_add)
+    static bool _is_signed_type(char c)
     {
+      const string signed_vals("casilxn"); //CXXNameMangler
+      return signed_vals.find(c) != string::npos;
+    }
+
+    DEFINE_BUILTIN(atomic_op)
+    {
+      const static map<string, AtomicOp> name_to_op = {
+        { "atomic_add", AtomicAdd },
+        { "atom_add", AtomicAdd },
+        { "atomic_and", AtomicAnd },
+        { "atom_and", AtomicAnd },
+        { "atom_cmpxchg", AtomicCmpXchg },
+        { "atomic_cmpxchg", AtomicCmpXchg },
+        { "atom_dec", AtomicDec },
+        { "atomic_dec", AtomicDec },
+        { "atom_inc", AtomicInc },
+        { "atomic_inc", AtomicInc },
+        { "atom_max", AtomicMax },
+        { "atomic_max", AtomicMax },
+        { "atom_min", AtomicMin },
+        { "atomic_min", AtomicMin },
+        { "atom_or", AtomicOr },
+        { "atomic_or", AtomicOr },
+        { "atom_sub", AtomicSub },
+        { "atomic_sub", AtomicSub },
+        { "atom_xchg", AtomicXchg },
+        { "atomic_xchg", AtomicXchg },
+        { "atom_xor", AtomicXor },
+        { "atomic_xor", AtomicXor },
+      };
+
       Memory *memory =
         workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
 
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_add", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomic(AtomicAdd, address, UARG(1));
-      result.setUInt(old);
-    }
-
-    DEFINE_BUILTIN(atomic_and)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
+      const bool is_64bit(ARG(0)->getType()->getPointerElementType()->getScalarSizeInBits() == 64);
+      const bool is_signed_type(_is_signed_type(overload.back()));
+      const auto op(name_to_op.at(fnName));
 
       size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_and", OCLGRIND_ERROR_UNALIGNED);
+      // Verify the address is 4/8-byte aligned
+      if ((address & ((is_64bit ? 8 : 4) - 1)) != 0) {
+        workItem->m_context->logError(("Unaligned address on " + fnName).c_str(), OCLGRIND_ERROR_UNALIGNED);
       }
-      uint32_t old = memory->atomic(AtomicAnd, address, UARG(1));
+
+      uint64_t old;
+      if (op == AtomicCmpXchg) {
+        if (is_64bit) {
+          old = memory->atomicCmpxchg<uint64_t>(address, UARG(1), UARG(2));
+        } else {
+          old = memory->atomicCmpxchg<uint32_t>(address, UARG(1), UARG(2));
+        }
+      } else if (op == AtomicInc || op == AtomicDec) {
+        if (is_64bit) {
+          old = memory->atomic<uint64_t>(op, address);
+        } else {
+          old = memory->atomic<uint32_t>(op, address);
+        }
+      } else if (op == AtomicMax || op == AtomicMin) {
+        if (is_64bit) {
+          if (is_signed_type) {
+            old = memory->atomic<int64_t>(op, address, SARG(1));
+          } else {
+            old = memory->atomic<uint64_t>(op, address, UARG(1));
+          }
+        } else {
+          if (is_signed_type) {
+            old = memory->atomic<int32_t>(op, address, SARG(1));
+          } else {
+            old = memory->atomic<uint32_t>(op, address, UARG(1));
+          }
+        }
+      } else {
+        if (is_64bit) {
+          old = memory->atomic<uint64_t>(op, address, UARG(1));
+        } else {
+          old = memory->atomic<uint32_t>(op, address, UARG(1));
+        }
+      }
       result.setUInt(old);
     }
-
-    DEFINE_BUILTIN(atomic_cmpxchg)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
-
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_cmpxchg", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomicCmpxchg(address, UARG(1), UARG(2));
-      result.setUInt(old);
-    }
-
-    DEFINE_BUILTIN(atomic_dec)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
-
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_dec", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomic(AtomicDec, address);
-      result.setUInt(old);
-    }
-
-    DEFINE_BUILTIN(atomic_inc)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
-
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_dec", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomic(AtomicInc, address);
-      result.setUInt(old);
-    }
-
-    DEFINE_BUILTIN(atomic_max)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
-
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_max", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomic(AtomicMax, address, UARG(1));
-      result.setUInt(old);
-    }
-
-    DEFINE_BUILTIN(atomic_min)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
-
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_min", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomic(AtomicMin, address, UARG(1));
-      result.setUInt(old);
-    }
-
-    DEFINE_BUILTIN(atomic_or)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
-
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_or", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomic(AtomicOr, address, UARG(1));
-      result.setUInt(old);
-    }
-
-    DEFINE_BUILTIN(atomic_sub)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
-
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_sub", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomic(AtomicSub, address, UARG(1));
-      result.setUInt(old);
-    }
-
-    DEFINE_BUILTIN(atomic_xchg)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
-
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_xchg", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomic(AtomicXchg, address, UARG(1));
-      result.setUInt(old);
-    }
-
-    DEFINE_BUILTIN(atomic_xor)
-    {
-      Memory *memory =
-        workItem->getMemory(ARG(0)->getType()->getPointerAddressSpace());
-
-      size_t address = PARG(0);
-      // Verify the address is 4-byte aligned
-      if ((address & 0x3) != 0) {
-        workItem->m_context->logError("Unaligned address on atomic_xor", OCLGRIND_ERROR_UNALIGNED);
-      }
-      uint32_t old = memory->atomic(AtomicXor, address, UARG(1));
-      result.setUInt(old);
-    }
-
 
     //////////////////////
     // Common Functions //
@@ -1289,8 +1202,10 @@ namespace oclgrind
 
     DEFINE_BUILTIN(translate_sampler_initializer)
     {
-      // A sampler initializer is just a pointer to its ConstantInt object
-      result.setPointer((size_t)ARG(0));
+      // A sampler initializer is just a pointer to its i32 value
+      uint32_t *data = (uint32_t*)workItem->m_pool.alloc(4);
+      *data = ((llvm::ConstantInt*)ARG(0))->getZExtValue();
+      result.setPointer((size_t)data);
     }
 
     DEFINE_BUILTIN(read_imagef)
@@ -1306,7 +1221,7 @@ namespace oclgrind
 #if LLVM_VERSION < 40
         sampler = UARG(1);
 #else
-        sampler = ((llvm::ConstantInt*)PARG(1))->getZExtValue();
+        sampler = *((uint32_t*)PARG(1));
 #endif
         coordIndex = 2;
       }
@@ -1428,7 +1343,7 @@ namespace oclgrind
 #if LLVM_VERSION < 40
         sampler = UARG(1);
 #else
-        sampler = ((llvm::ConstantInt*)PARG(1))->getZExtValue();
+        sampler = *((uint32_t*)PARG(1));
 #endif
         coordIndex = 2;
       }
@@ -1505,7 +1420,7 @@ namespace oclgrind
 #if LLVM_VERSION < 40
         sampler = UARG(1);
 #else
-        sampler = ((llvm::ConstantInt*)PARG(1))->getZExtValue();
+        sampler = *((uint32_t*)PARG(1));
 #endif
         coordIndex = 2;
       }
@@ -2376,6 +2291,34 @@ namespace oclgrind
       }
     }
 
+    DEFINE_BUILTIN(fmax_builtin)
+    {
+      TypedValue a = workItem->getOperand(ARG(0));
+      TypedValue b = workItem->getOperand(ARG(1));
+      for (unsigned i = 0; i < result.num; i++)
+      {
+        double _b = b.num > 1 ? b.getFloat(i) : b.getFloat();
+        if (result.size == 4)
+          result.setFloat(fmaxf(a.getFloat(i), _b), i);
+        else
+          result.setFloat(fmax(a.getFloat(i), _b), i);
+      }
+    }
+
+    DEFINE_BUILTIN(fmin_builtin)
+    {
+      TypedValue a = workItem->getOperand(ARG(0));
+      TypedValue b = workItem->getOperand(ARG(1));
+      for (unsigned i = 0; i < result.num; i++)
+      {
+        double _b = b.num > 1 ? b.getFloat(i) : b.getFloat();
+        if (result.size == 4)
+          result.setFloat(fminf(a.getFloat(i), _b), i);
+        else
+          result.setFloat(fmin(a.getFloat(i), _b), i);
+      }
+    }
+
     static double _maxmag_(double x, double y)
     {
       double _x = fabs(x);
@@ -2467,7 +2410,11 @@ namespace oclgrind
     {
       for (unsigned i = 0; i < result.num; i++)
       {
-        result.setSInt(ilogb(FARGV(0, i)), i);
+        double x = FARGV(0, i);
+        if (std::isnan(x))
+          result.setSInt(INT_MAX, i);
+        else
+          result.setSInt(ilogb(x), i);
       }
     }
 
@@ -2838,7 +2785,7 @@ namespace oclgrind
     // Synchronization Functions //
     ///////////////////////////////
 
-    DEFINE_BUILTIN(barrier)
+    DEFINE_BUILTIN(work_group_barrier)
     {
       workItem->m_state = WorkItem::BARRIER;
       workItem->m_workGroup->notifyBarrier(workItem, callInst, UARG(0));
@@ -3014,6 +2961,14 @@ namespace oclgrind
       result.setUInt(r);
     }
 
+    DEFINE_BUILTIN(get_enqueued_local_size)
+    {
+      uint64_t dim = UARG(0);
+      size_t r = dim < 3 ?
+        workItem->m_kernelInvocation->getLocalSize()[dim] : 0;
+      result.setUInt(r);
+    }
+
     DEFINE_BUILTIN(get_num_groups)
     {
       uint64_t dim = UARG(0);
@@ -3030,10 +2985,36 @@ namespace oclgrind
       result.setUInt(workItem->m_kernelInvocation->getWorkDim());
     }
 
+    DEFINE_BUILTIN(get_global_linear_id)
+    {
+      Size3 globalID = workItem->m_globalID;
+      Size3 globalSize = workItem->m_kernelInvocation->getGlobalSize();
+      Size3 globalOffset = workItem->m_kernelInvocation->getGlobalOffset();
+      size_t r =
+        ((globalID.z - globalOffset.z)  * globalSize.y +
+         (globalID.y - globalOffset.y)) * globalSize.x +
+          globalID.x - globalOffset.x;
+      result.setUInt(r);
+    }
+
+    DEFINE_BUILTIN(get_local_linear_id)
+    {
+      Size3 localID = workItem->m_localID;
+      Size3 localSize = workItem->m_workGroup->getGroupSize();
+      size_t r =
+        (localID.z * localSize.y + localID.y) * localSize.x + localID.x;
+      result.setUInt(r);
+    }
 
     /////////////////////
     // Other Functions //
     /////////////////////
+
+    DEFINE_BUILTIN(astype)
+    {
+      TypedValue src = workItem->getOperand(ARG(0));
+      memcpy(result.data, src.data, src.size*src.num);
+    }
 
     static void setConvertRoundingMode(const string& name, int def)
     {
@@ -3471,24 +3452,8 @@ namespace oclgrind
         (const llvm::DbgDeclareInst*)callInst;
       const llvm::Value *addr = dbgInst->getAddress();
 
-#if LLVM_VERSION > 36
-     const llvm::DILocalVariable *var = dbgInst->getVariable();
-     workItem->m_variables[var->getName()] = addr;
-#else
-      const llvm::MDNode *var = dbgInst->getVariable();
-      llvm::MDString *str = llvm::dyn_cast<llvm::MDString>(var->getOperand(0));
-      if (str)
-      {
-        // TODO: There must be a better way of getting the variable name...
-        unsigned length = str->getLength();
-        const char *name = str->getString().str().c_str();
-        if (length > strlen(name) + 1)
-        {
-          name += strlen(name) + 1;
-          workItem->m_variables[name] = addr;
-        }
-      }
-#endif
+      const llvm::DILocalVariable *var = dbgInst->getVariable();
+      workItem->m_variables[var->getName()] = {addr, var};
     }
 
     DEFINE_BUILTIN(llvm_dbg_value)
@@ -3499,24 +3464,8 @@ namespace oclgrind
       // TODO: Use offset?
       //uint64_t offset = dbgInst->getOffset();
 
-#if LLVM_VERSION > 36
       const llvm::DILocalVariable *var = dbgInst->getVariable();
-      workItem->m_variables[var->getName()] = value;
-#else
-      const llvm::MDNode *var = dbgInst->getVariable();
-      llvm::MDString *str = llvm::dyn_cast<llvm::MDString>(var->getOperand(0));
-      if (str)
-      {
-        // TODO: There must be a better way of getting the variable name...
-        unsigned length = str->getLength();
-        const char *name = str->getString().str().c_str();
-        if (length > strlen(name) + 1)
-        {
-          name += strlen(name) + 1;
-          workItem->m_variables[name] = value;
-        }
-      }
-#endif
+      workItem->m_variables[var->getName()] = {value, var};
     }
 
     DEFINE_BUILTIN(llvm_lifetime_start)
@@ -3592,28 +3541,28 @@ namespace oclgrind
     ADD_BUILTIN("prefetch", prefetch, NULL);
 
     // Atomic Functions
-    ADD_BUILTIN("atom_add", atomic_add, NULL);
-    ADD_BUILTIN("atomic_add", atomic_add, NULL);
-    ADD_BUILTIN("atom_and", atomic_and, NULL);
-    ADD_BUILTIN("atomic_and", atomic_and, NULL);
-    ADD_BUILTIN("atom_cmpxchg", atomic_cmpxchg, NULL);
-    ADD_BUILTIN("atomic_cmpxchg", atomic_cmpxchg, NULL);
-    ADD_BUILTIN("atom_dec", atomic_dec, NULL);
-    ADD_BUILTIN("atomic_dec", atomic_dec, NULL);
-    ADD_BUILTIN("atom_inc", atomic_inc, NULL);
-    ADD_BUILTIN("atomic_inc", atomic_inc, NULL);
-    ADD_BUILTIN("atom_max", atomic_max, NULL);
-    ADD_BUILTIN("atomic_max", atomic_max, NULL);
-    ADD_BUILTIN("atom_min", atomic_min, NULL);
-    ADD_BUILTIN("atomic_min", atomic_min, NULL);
-    ADD_BUILTIN("atom_or", atomic_or, NULL);
-    ADD_BUILTIN("atomic_or", atomic_or, NULL);
-    ADD_BUILTIN("atom_sub", atomic_sub, NULL);
-    ADD_BUILTIN("atomic_sub", atomic_sub, NULL);
-    ADD_BUILTIN("atom_xchg", atomic_xchg, NULL);
-    ADD_BUILTIN("atomic_xchg", atomic_xchg, NULL);
-    ADD_BUILTIN("atom_xor", atomic_xor, NULL);
-    ADD_BUILTIN("atomic_xor", atomic_xor, NULL);
+    ADD_BUILTIN("atom_add", atomic_op, NULL);
+    ADD_BUILTIN("atomic_add", atomic_op, NULL);
+    ADD_BUILTIN("atom_and", atomic_op, NULL);
+    ADD_BUILTIN("atomic_and", atomic_op, NULL);
+    ADD_BUILTIN("atom_cmpxchg", atomic_op, NULL);
+    ADD_BUILTIN("atomic_cmpxchg", atomic_op, NULL);
+    ADD_BUILTIN("atom_dec", atomic_op, NULL);
+    ADD_BUILTIN("atomic_dec", atomic_op, NULL);
+    ADD_BUILTIN("atom_inc", atomic_op, NULL);
+    ADD_BUILTIN("atomic_inc", atomic_op, NULL);
+    ADD_BUILTIN("atom_max", atomic_op, NULL);
+    ADD_BUILTIN("atomic_max", atomic_op, NULL);
+    ADD_BUILTIN("atom_min", atomic_op, NULL);
+    ADD_BUILTIN("atomic_min", atomic_op, NULL);
+    ADD_BUILTIN("atom_or", atomic_op, NULL);
+    ADD_BUILTIN("atomic_or", atomic_op, NULL);
+    ADD_BUILTIN("atom_sub", atomic_op, NULL);
+    ADD_BUILTIN("atomic_sub", atomic_op, NULL);
+    ADD_BUILTIN("atom_xchg", atomic_op, NULL);
+    ADD_BUILTIN("atomic_xchg", atomic_op, NULL);
+    ADD_BUILTIN("atom_xor", atomic_op, NULL);
+    ADD_BUILTIN("atomic_xor", atomic_op, NULL);
 
     // Common Functions
     ADD_BUILTIN("clamp", clamp, NULL);
@@ -3701,8 +3650,8 @@ namespace oclgrind
     ADD_BUILTIN("fdim", f2arg, F2ARG(fdim));
     ADD_BUILTIN("floor", f1arg, F1ARG(floor));
     ADD_BUILTIN("fma", fma_builtin, NULL);
-    ADD_BUILTIN("fmax", f2arg, F2ARG(fmax));
-    ADD_BUILTIN("fmin", f2arg, F2ARG(fmin));
+    ADD_BUILTIN("fmax", fmax_builtin, NULL);
+    ADD_BUILTIN("fmin", fmin_builtin, NULL);
     ADD_BUILTIN("fmod", f2arg, F2ARG(fmod));
     ADD_BUILTIN("fract", fract, NULL);
     ADD_BUILTIN("frexp", frexp_builtin, NULL);
@@ -3798,7 +3747,8 @@ namespace oclgrind
     ADD_BUILTIN("signbit", rel1arg, _signbit_);
 
     // Synchronization Functions
-    ADD_BUILTIN("barrier", barrier, NULL);
+    ADD_BUILTIN("barrier", work_group_barrier, NULL);
+    ADD_BUILTIN("work_group_barrier", work_group_barrier, NULL);
     ADD_BUILTIN("mem_fence", mem_fence, NULL);
     ADD_BUILTIN("read_mem_fence", mem_fence, NULL);
     ADD_BUILTIN("write_mem_fence", mem_fence, NULL);
@@ -3820,8 +3770,12 @@ namespace oclgrind
     ADD_BUILTIN("get_local_size", get_local_size, NULL);
     ADD_BUILTIN("get_num_groups", get_num_groups, NULL);
     ADD_BUILTIN("get_work_dim", get_work_dim, NULL);
+    ADD_BUILTIN("get_global_linear_id", get_global_linear_id, NULL);
+    ADD_BUILTIN("get_local_linear_id", get_local_linear_id, NULL);
+    ADD_BUILTIN("get_enqueued_local_size", get_enqueued_local_size, NULL);
 
     // Other Functions
+    ADD_PREFIX_BUILTIN("as_",            astype, NULL);
     ADD_PREFIX_BUILTIN("convert_half",   convert_half, NULL);
     ADD_PREFIX_BUILTIN("convert_float",  convert_float, NULL);
     ADD_PREFIX_BUILTIN("convert_double", convert_float, NULL);

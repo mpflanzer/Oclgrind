@@ -404,8 +404,7 @@ namespace oclgrind
     }
   }
 
-  const llvm::Instruction* getConstExprAsInstruction(
-    const llvm::ConstantExpr *expr)
+  llvm::Instruction* getConstExprAsInstruction(const llvm::ConstantExpr *expr)
   {
     // Get operands
     vector<llvm::Value*> valueOperands(expr->op_begin(), expr->op_end());
@@ -452,13 +451,8 @@ namespace oclgrind
       }
       else
       {
-#if LLVM_VERSION > 36
         return llvm::GetElementPtrInst::Create(nullptr,
                                                operands[0], operands.slice(1));
-#else
-        return llvm::GetElementPtrInst::Create(operands[0], operands.slice(1));
-#endif
-
       }
     case llvm::Instruction::ICmp:
     case llvm::Instruction::FCmp:
@@ -466,6 +460,8 @@ namespace oclgrind
         (llvm::Instruction::OtherOps)opcode,
         (llvm::CmpInst::Predicate)expr->getPredicate(),
         operands[0], operands[1]);
+    case llvm::Instruction::AddrSpaceCast:
+      FATAL_ERROR("Unsupported constant expression: addrspacecast");
     default:
       assert(expr->getNumOperands() == 2 && "Must be binary operator?");
 
@@ -706,6 +702,7 @@ namespace oclgrind
       cout << *(double*)data;
       break;
     case llvm::Type::IntegerTyID:
+      cout << dec;
       switch (size)
       {
       case 1:
@@ -766,6 +763,93 @@ namespace oclgrind
     }
   }
 
+  size_t resolveConstantPointer(const llvm::Value *ptr, TypedValueMap& values)
+  {
+    if (values.count(ptr))
+    {
+      // In the value map - just return the pointer
+      return values.at(ptr).getPointer();
+    }
+    else if (auto gep = llvm::dyn_cast<llvm::GEPOperator>(ptr))
+    {
+      // Get base address
+      size_t base = resolveConstantPointer(gep->getPointerOperand(), values);
+      const llvm::Type *ptrType = gep->getPointerOperandType();
+
+      // Get indices
+      std::vector<int64_t> offsets;
+      llvm::User::const_op_iterator opItr;
+      for (opItr = gep->idx_begin(); opItr != gep->idx_end(); opItr++)
+      {
+        auto idx = (llvm::ConstantInt*)(opItr->get());
+        offsets.push_back(idx->getSExtValue());
+      }
+
+      return resolveGEP(base, ptrType, offsets);
+    }
+    else if (auto bc = llvm::dyn_cast<llvm::BitCastOperator>(ptr))
+    {
+      // bitcast - no change to the source pointer
+      return resolveConstantPointer(bc->getOperand(0), values);
+    }
+    else if (ptr->getValueID() == llvm::Value::ConstantPointerNullVal)
+    {
+      return 0;
+    }
+    else
+    {
+      FATAL_ERROR("Unsupported constant pointer type: %d", ptr->getValueID());
+    }
+
+    return 0;
+  }
+
+  size_t resolveGEP(size_t base, const llvm::Type *ptrType,
+                    std::vector<int64_t>& offsets)
+  {
+    size_t address = base;
+
+    // Iterate over indices
+    for (int i = 0; i < offsets.size(); i++)
+    {
+      int64_t offset = offsets[i];
+
+      if (ptrType->isPointerTy())
+      {
+        // Get pointer element size
+        const llvm::Type *elemType = ptrType->getPointerElementType();
+        address += offset*getTypeSize(elemType);
+        ptrType = elemType;
+      }
+      else if (ptrType->isArrayTy())
+      {
+        // Get array element size
+        const llvm::Type *elemType = ptrType->getArrayElementType();
+        address += offset*getTypeSize(elemType);
+        ptrType = elemType;
+      }
+      else if (ptrType->isVectorTy())
+      {
+        // Get vector element size
+        const llvm::Type *elemType = ptrType->getVectorElementType();
+        address += offset*getTypeSize(elemType);
+        ptrType = elemType;
+      }
+      else if (ptrType->isStructTy())
+      {
+        address +=
+          getStructMemberOffset((const llvm::StructType*)ptrType, offset);
+        ptrType = ptrType->getStructElementType(offset);
+      }
+      else
+      {
+        FATAL_ERROR("Unsupported GEP base type: %d", ptrType->getTypeID());
+      }
+    }
+
+    return address;
+  }
+
   MessageType getMessageBaseType(MessageType type)
   {
     return (MessageType)(type & 0x3);
@@ -813,6 +897,9 @@ namespace oclgrind
 
   uint8_t* MemoryPool::alloc(size_t size)
   {
+    if (size == 0)
+      return NULL;
+
     // Check if requested size larger than block size
     if (size > m_blockSize)
     {
@@ -821,6 +908,22 @@ namespace oclgrind
       m_blocks.push_back(buffer);
       return buffer;
     }
+
+    // Round up size to nearest power of two for alignment
+    // Taken from here:
+    //   http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+    unsigned align = size;
+    align--;
+    align |= align >> 1;
+    align |= align >> 2;
+    align |= align >> 4;
+    align |= align >> 8;
+    align |= align >> 16;
+    align++;
+
+    // Align offset to size of requested allocation
+    if (m_offset & (align-1))
+      m_offset += (align - (m_offset & (align-1)));
 
     // Check if enough space in current block
     if (m_offset + size > m_blockSize)

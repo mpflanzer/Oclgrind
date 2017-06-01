@@ -52,7 +52,7 @@ WorkItem::WorkItem(const KernelInvocation *kernelInvocation,
 
   // Compute global ID
   Size3 groupID = workGroup->getGroupID();
-  Size3 groupSize = workGroup->getGroupSize();
+  Size3 groupSize = kernelInvocation->getLocalSize();
   Size3 globalOffset = kernelInvocation->getGlobalOffset();
   m_globalID.x = lid.x + groupID.x*groupSize.x + globalOffset.x;
   m_globalID.y = lid.y + groupID.y*groupSize.y + globalOffset.y;
@@ -476,31 +476,6 @@ const unsigned char* WorkItem::getValueData(const llvm::Value *value) const
   return getValue(value).data;
 }
 
-const llvm::Value* WorkItem::getVariable(std::string name) const
-{
-  // Check private variables
-  VariableMap::const_iterator itr;
-  itr = m_variables.find(name);
-  if (itr != m_variables.end())
-    return itr->second;
-
-  // Check global variables
-  string globalName = m_position->currBlock->getParent()->getName();
-  globalName += ".";
-  globalName += name;
-  const llvm::Module *module =
-    m_kernelInvocation->getKernel()->getFunction()->getParent();
-  for (auto global = module->global_begin();
-            global != module->global_end();
-            global++)
-  {
-    if (global->getName() == globalName)
-      return &*global;
-  }
-
-  return NULL;
-}
-
 const WorkGroup* WorkItem::getWorkGroup() const
 {
   return m_workGroup;
@@ -511,6 +486,227 @@ bool WorkItem::hasValue(const llvm::Value *key) const
   return m_cache->hasValue(key);
 }
 
+void WorkItem::printExpression(string expr) const
+{
+  // Split base variable name from rest of expression
+  size_t split;
+  string basename;
+  if ((split = expr.find_first_of(".-[")) != string::npos)
+  {
+    basename = expr.substr(0, split);
+    expr = expr.substr(split);
+  }
+  else
+  {
+    basename = expr;
+    expr = "";
+  }
+
+  const llvm::Value *baseValue = NULL;
+  const llvm::DIVariable *divar = NULL;
+
+  // Check private variables
+  VariableMap::const_iterator itr;
+  itr = m_variables.find(basename);
+  if (itr != m_variables.end())
+  {
+    baseValue = itr->second.first;
+    divar = itr->second.second;
+  }
+
+  // Check global variables
+  string globalName = m_position->currBlock->getParent()->getName();
+  globalName += ".";
+  globalName += basename;
+  const llvm::Module *module =
+    m_kernelInvocation->getKernel()->getFunction()->getParent();
+  for (auto global = module->global_begin();
+            global != module->global_end();
+            global++)
+  {
+    if (global->getName() == globalName)
+    {
+      baseValue = &*global;
+
+#if LLVM_VERSION >= 40
+      llvm::SmallVector<llvm::DIGlobalVariableExpression*, 3> GVEs;
+      global->getDebugInfo(GVEs);
+      if (GVEs.size() == 0)
+#endif
+      {
+        cout << "global variable debug information not found";
+        return;
+      }
+#if LLVM_VERSION >= 40
+      // TODO: Does it matter which GVE we pick?
+      divar = llvm::dyn_cast<llvm::DIGlobalVariable>(GVEs[0]->getRawVariable());
+#endif
+    }
+  }
+
+  // Check that we found the target variable
+  if (!baseValue)
+  {
+    cout << "not found";
+    return;
+  }
+
+  // Get variable data and type
+  TypedValue result = getOperand(baseValue);
+  unsigned char *data = result.data;
+  const llvm::Type *type = baseValue->getType();
+  const llvm::Metadata *mdtype = divar->getRawType();
+
+  // Auto-dereference global variables and allocas
+  if (baseValue->getValueID() == llvm::Value::GlobalVariableVal ||
+      ((const llvm::Instruction*)baseValue)->getOpcode()
+         == llvm::Instruction::Alloca)
+  {
+    size_t address = result.getPointer();
+    Memory *memory = getMemory(type->getPointerAddressSpace());
+    data = (unsigned char*)memory->getPointer(address);
+    type = type->getPointerElementType();
+  }
+
+  // Handle rest of print expression
+  while (!expr.empty())
+  {
+    bool member = false;
+    bool dereference = false;
+    size_t subscript = 0;
+
+    // Handle special characters
+    if (expr[0] == '.')
+    {
+      expr = expr.substr(1);
+      member = true;
+    }
+    else if (!expr.compare(0, 2, "->"))
+    {
+      expr = expr.substr(2);
+      dereference = true;
+      member = true;
+    }
+    else if (expr[0] == '[')
+    {
+      // Find end of subscript
+      size_t end = expr.find(']');
+      if (end == string::npos)
+      {
+        cout << "missing ']'" << endl;
+        return;
+      }
+
+      // Parse index value
+      stringstream ss(expr.substr(1, end-1));
+      ss >> subscript;
+      if (!ss.eof())
+      {
+        cout << "invalid subscript index" << endl;
+        return;
+      }
+
+      expr = expr.substr(end+1);
+      dereference = true;
+    }
+    else
+    {
+      cout << "invalid print expression";
+      return;
+    }
+
+    // Deference a pointer if user requested
+    if (dereference)
+    {
+      auto ptrtype = llvm::dyn_cast<llvm::DIDerivedType>(mdtype);
+      if (!ptrtype || ptrtype->getTag() != llvm::dwarf::DW_TAG_pointer_type)
+      {
+        cout << "not a pointer type";
+        return;
+      }
+
+      // Get pointer value
+      size_t address = *(size_t*)data;
+      Memory *memory = getMemory(type->getPointerAddressSpace());
+
+      // Check address is valid
+      auto elemType = type->getPointerElementType();
+      size_t elemSize = getTypeSize(elemType);
+      if (!memory->isAddressValid(address + subscript * elemSize, elemSize))
+      {
+        cout << "invalid memory address";
+        return;
+      }
+
+      // Get pointer to data and add offset
+      data = (unsigned char*)memory->getPointer(address);
+      data += subscript * elemSize;
+
+      // Update types
+      mdtype = ptrtype->getRawBaseType();
+      type = elemType;
+    }
+
+    // Deal with structure elements
+    if (member)
+    {
+      // Split at next special character
+      size_t split;
+      string element;
+      if ((split = expr.find_first_of(".-[")) != string::npos)
+      {
+        element = expr.substr(0, split);
+        expr = expr.substr(split);
+      }
+      else
+      {
+        element = expr;
+        expr = "";
+      }
+
+      // Deal with typedef
+      auto ditype = llvm::dyn_cast<llvm::DIType>(mdtype);
+      if (ditype->getTag() == llvm::dwarf::DW_TAG_typedef)
+      {
+        mdtype = llvm::dyn_cast<llvm::DIDerivedType>(ditype)->getRawBaseType();
+      }
+
+      // Ensure we have a composite type
+      auto composite_type = llvm::dyn_cast<llvm::DICompositeType>(mdtype);
+      if (!composite_type)
+      {
+        cout << "not a composite type";
+        return;
+      }
+
+      // Find element with matching name
+      bool found = false;
+      auto elements = composite_type->getElements();
+      unsigned numElements = elements->getNumOperands();
+      for (unsigned i = 0; i < numElements; i++)
+      {
+        auto elem =
+          llvm::dyn_cast<llvm::DIDerivedType>(elements->getOperand(i));
+        if (elem->getName() == element)
+        {
+          // Increment data pointer by offset and update type
+          type = type->getStructElementType(i);
+          mdtype = elem->getRawBaseType();
+          data = data + elem->getOffsetInBits()/8;
+          found = true;
+        }
+      }
+      if (!found)
+      {
+        cout << "no member named '" << element << "' found";
+        return;
+      }
+    }
+  }
+
+  printTypedData(type, data);
+}
+
 bool WorkItem::printValue(const llvm::Value *value) const
 {
   if (!hasValue(value))
@@ -519,37 +715,6 @@ bool WorkItem::printValue(const llvm::Value *value) const
   }
 
   printTypedData(value->getType(), getValue(value).data);
-
-  return true;
-}
-
-bool WorkItem::printVariable(string name) const
-{
-  // Find variable
-  const llvm::Value *value = getVariable(name);
-  if (!value)
-  {
-    return false;
-  }
-
-  // Get variable value
-  TypedValue result = getOperand(value);
-  const llvm::Type *type = value->getType();
-
-  if (value->getValueID() == llvm::Value::GlobalVariableVal ||
-      ((const llvm::Instruction*)value)->getOpcode()
-         == llvm::Instruction::Alloca)
-  {
-    // If value is alloca or global variable, look-up data at address
-    size_t address = result.getPointer();
-    Memory *memory = getMemory(value->getType()->getPointerAddressSpace());
-    unsigned char *data = (unsigned char*)memory->getPointer(address);
-    printTypedData(value->getType()->getPointerElementType(), data);
-  }
-  else
-  {
-    printTypedData(type, result.data);
-  }
 
   return true;
 }
@@ -644,22 +809,7 @@ INSTRUCTION(ashr)
 
 INSTRUCTION(bitcast)
 {
-  const llvm::Value *op = instruction->getOperand(0);
-
-  // Check for address space casts
-  if (instruction->getType()->isPointerTy())
-  {
-    unsigned srcAddrSpace = op->getType()->getPointerAddressSpace();
-    unsigned dstAddrSpace = instruction->getType()->getPointerAddressSpace();
-    if (srcAddrSpace != dstAddrSpace)
-    {
-      FATAL_ERROR("Invalid pointer cast from %s to %s address spaces",
-                  getAddressSpaceName(srcAddrSpace),
-                  getAddressSpaceName(dstAddrSpace));
-    }
-  }
-
-  TypedValue operand = getOperand(op);
+  TypedValue operand = getOperand(instruction->getOperand(0));
   memcpy(result.data, operand.data, result.size*result.num);
 }
 
@@ -970,50 +1120,18 @@ INSTRUCTION(gep)
     (const llvm::GetElementPtrInst*)instruction;
 
   // Get base address
-  const llvm::Value *base = gepInst->getPointerOperand();
-  size_t address = getOperand(base).getPointer();
+  size_t base = getOperand(gepInst->getPointerOperand()).getPointer();
   const llvm::Type *ptrType = gepInst->getPointerOperandType();
 
-  // Iterate over indices
+  // Get indices
+  std::vector<int64_t> offsets;
   llvm::User::const_op_iterator opItr;
   for (opItr = gepInst->idx_begin(); opItr != gepInst->idx_end(); opItr++)
   {
-    int64_t offset = getOperand(opItr->get()).getSInt();
-
-    if (ptrType->isPointerTy())
-    {
-      // Get pointer element size
-      const llvm::Type *elemType = ptrType->getPointerElementType();
-      address += offset*getTypeSize(elemType);
-      ptrType = elemType;
-    }
-    else if (ptrType->isArrayTy())
-    {
-      // Get array element size
-      const llvm::Type *elemType = ptrType->getArrayElementType();
-      address += offset*getTypeSize(elemType);
-      ptrType = elemType;
-    }
-    else if (ptrType->isVectorTy())
-    {
-      // Get vector element size
-      const llvm::Type *elemType = ptrType->getVectorElementType();
-      address += offset*getTypeSize(elemType);
-      ptrType = elemType;
-    }
-    else if (ptrType->isStructTy())
-    {
-      address +=
-        getStructMemberOffset((const llvm::StructType*)ptrType, offset);
-      ptrType = ptrType->getStructElementType(offset);
-    }
-    else
-    {
-      FATAL_ERROR("Unsupported GEP base type: %d", ptrType->getTypeID());
-    }
+    offsets.push_back(getOperand(opItr->get()).getSInt());
   }
 
-  result.setPointer(address);
+  result.setPointer(resolveGEP(base, ptrType, offsets));
 }
 
 INSTRUCTION(icmp)
@@ -1135,7 +1253,7 @@ INSTRUCTION(itrunc)
   TypedValue op = getOperand(instruction->getOperand(0));
   for (unsigned i = 0; i < result.num; i++)
   {
-    memcpy(result.data+i*result.size, op.data+i*op.size, result.size);
+    result.setUInt(op.getUInt(i), i);
   }
 }
 
@@ -1396,7 +1514,11 @@ INSTRUCTION(swtch)
   uint64_t val = getOperand(cond).getUInt();
   const llvm::ConstantInt *cval =
     (const llvm::ConstantInt*)llvm::ConstantInt::get(cond->getType(), val);
+#if LLVM_VERSION < 50
   m_position->nextBlock = swtch->findCaseValue(cval).getCaseSuccessor();
+#else
+  m_position->nextBlock = swtch->findCaseValue(cval)->getCaseSuccessor();
+#endif
 }
 
 INSTRUCTION(udiv)
@@ -1533,7 +1655,11 @@ InterpreterCache::~InterpreterCache()
   for (constExprItr  = m_constExpressions.begin();
        constExprItr != m_constExpressions.end(); constExprItr++)
   {
+#if LLVM_VERSION < 50
     delete constExprItr->second;
+#else
+    constExprItr->second->deleteValue();
+#endif
   }
 }
 

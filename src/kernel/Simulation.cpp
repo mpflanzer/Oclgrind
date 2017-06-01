@@ -149,15 +149,6 @@ bool Simulation::load(const char *filename)
     get(m_wgsize.y);
     get(m_wgsize.z);
 
-    // Ensure work-group size exactly divides NDRange
-    if (m_ndrange.x % m_wgsize.x ||
-        m_ndrange.y % m_wgsize.y ||
-        m_ndrange.z % m_wgsize.z)
-    {
-      cerr << "Work group size must divide NDRange exactly." << endl;
-      return false;
-    }
-
     // Open program file
     ifstream progFile;
     progFile.open(progFileName.c_str(), ios_base::in | ios_base::binary);
@@ -212,9 +203,15 @@ bool Simulation::load(const char *filename)
       return false;
     }
 
-    // Clear global memory
-    Memory *globalMemory = m_context->getGlobalMemory();
-    globalMemory->clear();
+    // Ensure work-group size exactly divides NDRange if necessary
+    if (m_program->requiresUniformWorkGroups() &&
+        (m_ndrange.x % m_wgsize.x ||
+         m_ndrange.y % m_wgsize.y ||
+         m_ndrange.z % m_wgsize.z))
+    {
+      cerr << "Work group size must divide NDRange exactly." << endl;
+      return false;
+    }
 
     // Parse kernel arguments
     m_dumpArguments.clear();
@@ -748,7 +745,7 @@ void Simulation::run(bool dumpGlobalMemory)
 
     switch (itr->type)
     {
-      DUMP_TYPE(TYPE_CHAR, char);
+      DUMP_TYPE(TYPE_CHAR, int8_t);
       DUMP_TYPE(TYPE_UCHAR, uint8_t);
       DUMP_TYPE(TYPE_SHORT, int16_t);
       DUMP_TYPE(TYPE_USHORT, uint16_t);

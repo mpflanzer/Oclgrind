@@ -28,9 +28,6 @@
 #include <unordered_map>
 #include <vector>
 
-#define BIG_SEPARATOR   "================================"
-#define SMALL_SEPARATOR "--------------------------------"
-
 #if defined(_WIN32) && !defined(__MINGW32__)
 #define snprintf _snprintf
 #undef ERROR
@@ -45,6 +42,18 @@
 #else
 #define THREAD_LOCAL thread_local
 #endif
+
+#define CLK_NORMALIZED_COORDS_TRUE 0x0001
+
+#define CLK_ADDRESS_NONE 0x0000
+#define CLK_ADDRESS_CLAMP_TO_EDGE 0x0002
+#define CLK_ADDRESS_CLAMP 0x0004
+#define CLK_ADDRESS_REPEAT 0x0006
+#define CLK_ADDRESS_MIRRORED_REPEAT 0x0008
+#define CLK_ADDRESS_MASK 0x000E
+
+#define CLK_FILTER_NEAREST 0x0010
+#define CLK_FILTER_LINEAR 0x0020
 
 namespace llvm
 {
@@ -169,8 +178,7 @@ namespace oclgrind
   void getConstantData(unsigned char *data, const llvm::Constant *constant);
 
   // Creates an instruction from a constant expression
-  const llvm::Instruction* getConstExprAsInstruction(
-    const llvm::ConstantExpr *expr);
+  llvm::Instruction* getConstExprAsInstruction(const llvm::ConstantExpr *expr);
 
   // Get the ConstantInt object for a Metadata node
   const llvm::ConstantInt* getMDAsConstInt(const llvm::Metadata *md);
@@ -198,6 +206,13 @@ namespace oclgrind
 
   // Print data in a human readable format (according to its type)
   void printTypedData(const llvm::Type *type, const unsigned char *data);
+
+  // Resolve a constant pointer, using a set of known constant values
+  size_t resolveConstantPointer(const llvm::Value *ptr, TypedValueMap& values);
+
+  // Resolve a GEP from a base address and list of offsets
+  size_t resolveGEP(size_t base, const llvm::Type *ptrType,
+                    std::vector<int64_t>& offsets);
 
   // Return the base type for a message type
   MessageType getMessageBaseType(MessageType type);

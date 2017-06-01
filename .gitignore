@@ -1,50 +1,27 @@
-# Autotools generated files
-aclocal.m4
-autom4te.cache
-compile
-config.guess
-config.h
-config.h.in
-config.log
-config.status
-config.sub
-configure
-depcomp
-.deps
-*.dirstamp
-install-sh
-ltmain.sh
-m4/libtool.m4
-m4/ltoptions.m4
-m4/ltsugar.m4
-m4/ltversion.m4
-m4/lt~obsolete.m4
+# CMake output
+*.cmake
+!src/core/gen_clc_h.cmake
+CMakeCache.txt
+CMakeFiles/
 Makefile
-Makefile.in
-missing
-stamp-h1
-test-driver
+config.h
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
 
 # Compiler output
 *.o
-*.lo
-.libs
-liboclgrind.la
-liboclgrind-rt.la
-liboclgrind-rt-icd.la
-libtool
+*.so
+*.dylib
+include
 /oclgrind
 oclgrind.icd
 oclgrind-kernel
 src/core/clc_h.cpp
-
-# Test output
-test-suite.log
-*.trs
-*.log
-*.out
-*.diff
+tests/apps/image/image
 tests/apps/vecadd/vecadd
+tests/runtime/map_buffer
 
 # Misc
 oclgrind-*.tar.gz

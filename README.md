@@ -1,4 +1,3 @@
-========
 Oclgrind
 ========
 
@@ -21,12 +20,11 @@ Binary releases can be found on the GitHub releases page:
 
 Build dependencies
 ------------------
-
-To build this project, you will need LLVM and Clang 3.6 (or newer)
+To build this project, you will need LLVM and Clang 3.9 (or newer)
 development libraries and headers. If you build LLVM from source, it
 is recommended to enable optimizations to significantly improve the
-performance of Oclgrind (set `CMAKE_BUILD_TYPE` to `RelWithDebInfo`,
-or configure with `--enable-optimized`).
+performance of Oclgrind (set `CMAKE_BUILD_TYPE` to `Release` or
+`RelWithDebInfo`).
 
 You will need to use a compiler that supports C++11. Python should
 also be available in order to run the test suite.
@@ -40,7 +38,8 @@ When configuring the CMake build, you may be prompted to supply a
 value for the `LLVM_DIR` parameter (this shouldn't be necessary if
 LLVM is installed in a standard system location). This should be set
 to the directory containing your LLVM installation's
-`LLVMConfig.cmake` file (typically `${LLVM_ROOT}/share/llvm/cmake/`).
+`LLVMConfig.cmake` file (typically either
+`${LLVM_ROOT}/lib/cmake/llvm` or `${LLVM_ROOT}/share/llvm/cmake/`).
 If Clang is installed separately to LLVM, then you may also be
 prompted to supply a path for the `CLANG_ROOT` parameter, which should
 be the root of your Clang installation (containing the `bin/`, `lib/`
@@ -51,7 +50,7 @@ A typical CMake command-line might look like this:
     cmake ${OCLGRIND_SOURCE} \
           -DCMAKE_BUILD_TYPE=RelWithDebInfo \
           -DCMAKE_INSTALL_PREFIX=${INSTALL_ROOT} \
-          -DLLVM_DIR=${LLVM_ROOT}/share/llvm/cmake
+          -DLLVM_DIR=${LLVM_ROOT}/lib/cmake/llvm
 
 where `${OCLGRIND_SOURCE}` is the path to the root directory
 containing the Oclgrind source code, `${LLVM_ROOT}` is the path to the
@@ -73,52 +72,16 @@ copying the `oclgrind.icd` file from the build directory to
 `/etc/OpenCL/vendors/`.
 
 
-Building on Linux and OS X (autotools)
---------------------------------------
-An autotools build system is also provided as an alternative to
-CMake. This will likely be removed in a future version of Oclgrind.
-
-If you are building directly from the GitHub repository, you will need
-to run `autoreconf -i` to generate the necessary build files. This is
-not required if you are using a released source package.
-
-Run `configure` to generate the Makefile, optionally using
-`--prefix=PATH` to specify the target installation directory. If you
-don't have the LLVM includes and libraries on your search path, you
-can specify the location of your LLVM installation using the
-`--with-llvm=PATH` option. For example:
-
-    ./configure --prefix=$PWD/build/ --with-llvm=PATH/TO/LLVM/INSTALL
-
-This path should be the directory in which LLVM is installed (e.g. the
-path specified to `--prefix` or `CMAKE_INSTALL_PREFIX` when LLVM was
-built). If the Clang includes and libraries are not on your search
-path or in the same location as LLVM, you can use the
-`--with-clang=PATH` option to specify its root directory.
-
-Next, build and install with make:
-
-    make
-    make check
-    make install
-
-If installing to a non-default location, you should add the `bin/`
-directory to the `PATH` environment variable in order to make use of
-the `oclgrind` command. If you wish to use Oclgrind via the OpenCL ICD
-loader (optional), then you should create an ICD loading point by
-copying the `oclgrind.icd` file from the build directory to
-`/etc/OpenCL/vendors/`.
-
-
 Building on Windows
 -------------------
 Building Oclgrind on Windows requires Visual Studio 2013 (or newer),
-and Windows 7 (or newer).
+and Windows 7 (or newer). Compiling against recent versions of LLVM
+may require Visual Studio 2015.
 
 When configuring the CMake build, you may be prompted to supply a
 value for the `LLVM_DIR` parameter. This should be set to the
 directory containing your LLVM installation's `LLVMConfig.cmake` file
-(for example `C:\Program Files\LLVM\share\llvm\cmake\`). If Clang is
+(for example `C:\Program Files\LLVM\lib\cmake\llvm`). If Clang is
 installed separately to LLVM, then you may also be prompted to supply
 a path in the `CLANG_ROOT` parameter, which should be the root of your
 Clang installation (containing the `bin/`, `lib/` and `include/`

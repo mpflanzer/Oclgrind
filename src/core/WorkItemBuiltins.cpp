@@ -159,19 +159,161 @@ namespace oclgrind
       }
     }
 
-    // Extract the (first) argument type from an overload string
-    static char getOverloadArgType(const string& overload)
+    enum class OverloadArgType
     {
-      char type = overload[0];
-      if (type == 'D')
-      {
-        char *typestr;
-        strtol(overload.c_str() + 2, &typestr, 10);
-        type = typestr[1];
-      }
-      return type;
+      Void,
+      Bool,
+      Char,
+      UChar,
+      UShort,
+      UInt,
+      ULong,
+      ULongLong,
+      UInt128,
+      SChar,
+      WChar,
+      Char16,
+      Char32,
+      Short,
+      Int,
+      Long,
+      LongLong,
+      Int128,
+      Half,
+      Float,
+      Double,
+      //LongDouble,
+      //Float128,
+      NullPtr,
+    };
+
+    static std::string argtype2str(OverloadArgType type)
+    {
+      static std::map<OverloadArgType, std::string> names{
+        {OverloadArgType::Void, "void"},
+        {OverloadArgType::Bool, "bool"},
+        {OverloadArgType::Char, "char"},
+        {OverloadArgType::UChar, "uchar"},
+        {OverloadArgType::UShort, "ushort"},
+        {OverloadArgType::UInt, "uint"},
+        {OverloadArgType::ULong, "ulong"},
+        {OverloadArgType::ULongLong, "ulonglong"},
+        {OverloadArgType::UInt128, "uint128"},
+        {OverloadArgType::SChar, "schar"},
+        {OverloadArgType::WChar, "wchar"},
+        {OverloadArgType::Char16, "char16"},
+        {OverloadArgType::Char32, "char32"},
+        {OverloadArgType::Short, "short"},
+        {OverloadArgType::Int, "int"},
+        {OverloadArgType::Long, "long"},
+        {OverloadArgType::LongLong, "longlong"},
+        {OverloadArgType::Int128, "int128"},
+        {OverloadArgType::Half, "half"},
+        {OverloadArgType::Float, "float"},
+        {OverloadArgType::Double, "double"},
+        {OverloadArgType::NullPtr, "nullptr"},
+      };
+
+      return names.at(type);
     }
 
+    static OverloadArgType parseOverloadType(const std::string &overload)
+    {
+      if(overload.empty())
+      {
+        FATAL_ERROR("Invalid argument type: %s",
+            overload.c_str());
+      }
+
+      if(overload[0] == 'D')
+      {
+        if(overload.length() < 2)
+        {
+          FATAL_ERROR("Invalid argument type: %s",
+              overload.c_str());
+        }
+
+        switch(overload[1])
+        {
+          case 's':
+            return OverloadArgType::Char16;
+          case 'i':
+            return OverloadArgType::Char32;
+          case 'h':
+            return OverloadArgType::Half;
+          case 'n':
+            return OverloadArgType::NullPtr;
+          default:
+            FATAL_ERROR("Unsupported argument type: %s",
+                        overload.c_str());
+        }
+      }
+      else
+      {
+        switch(overload[0])
+        {
+          case 'v':
+            return OverloadArgType::Void;
+          case 'b':
+            return OverloadArgType::Bool;
+          case 'c':
+            return OverloadArgType::Char;
+          case 'h':
+            return OverloadArgType::UChar;
+          case 't':
+            return OverloadArgType::UShort;
+          case 'j':
+            return OverloadArgType::UInt;
+          case 'm':
+            return OverloadArgType::ULong;
+          case 'y':
+            return OverloadArgType::ULongLong;
+          case 'o':
+            return OverloadArgType::UInt128;
+          case 'a':
+            return OverloadArgType::SChar;
+          case 'w':
+            return OverloadArgType::WChar;
+          case 's':
+            return OverloadArgType::Short;
+          case 'i':
+            return OverloadArgType::Int;
+          case 'l':
+            return OverloadArgType::Long;
+          case 'x':
+            return OverloadArgType::LongLong;
+          case 'n':
+            return OverloadArgType::Int128;
+          case 'f':
+            return OverloadArgType::Float;
+          case 'd':
+            return OverloadArgType::Double;
+          default:
+            FATAL_ERROR("Unsupported argument type: %c",
+                        overload[0]);
+        }
+      }
+    }
+
+    // Extract the (first) argument type from an overload string
+    static OverloadArgType getOverloadArgType(const string& overload)
+    {
+      int start = 0;
+
+      // Skip vector length specifier
+      if(overload.compare(0, 2, "Dv") == 0)
+      {
+        start = overload.find_first_of('_') + 1;
+      }
+
+      return parseOverloadType(overload.substr(start));
+    }
+
+    // Extract the coordinate type from an overload string
+    static OverloadArgType getOverloadCoordinateType(const string& overload)
+    {
+      return parseOverloadType(std::string(1, *overload.rbegin()));
+    }
 
     ///////////////////////////////////////
     // Async Copy and Prefetch Functions //
@@ -379,8 +521,9 @@ namespace oclgrind
     {
       switch (getOverloadArgType(overload))
       {
-        case 'f':
-        case 'd':
+        case OverloadArgType::Half:
+        case OverloadArgType::Float:
+        case OverloadArgType::Double:
           if (ARG(1)->getType()->isVectorTy())
           {
             f3arg(workItem, callInst, fnName, overload, result, _clamp_);
@@ -396,21 +539,21 @@ namespace oclgrind
             }
           }
           break;
-        case 'h':
-        case 't':
-        case 'j':
-        case 'm':
+        case OverloadArgType::UChar:
+        case OverloadArgType::UShort:
+        case OverloadArgType::UInt:
+        case OverloadArgType::ULong:
           u3arg(workItem, callInst, fnName, overload, result, _clamp_);
           break;
-        case 'c':
-        case 's':
-        case 'i':
-        case 'l':
+        case OverloadArgType::Char:
+        case OverloadArgType::Short:
+        case OverloadArgType::Int:
+        case OverloadArgType::Long:
           s3arg(workItem, callInst, fnName, overload, result, _clamp_);
           break;
         default:
-          FATAL_ERROR("Unsupported argument type: %c",
-                      getOverloadArgType(overload));
+          FATAL_ERROR("Unsupported argument type: %s",
+                      argtype2str(getOverloadArgType(overload)).c_str());
       }
     }
 
@@ -418,8 +561,9 @@ namespace oclgrind
     {
       switch (getOverloadArgType(overload))
       {
-        case 'f':
-        case 'd':
+        case OverloadArgType::Half:
+        case OverloadArgType::Float:
+        case OverloadArgType::Double:
           if (ARG(1)->getType()->isVectorTy())
           {
             f2arg(workItem, callInst, fnName, overload, result, fmax);
@@ -434,21 +578,21 @@ namespace oclgrind
             }
           }
           break;
-        case 'h':
-        case 't':
-        case 'j':
-        case 'm':
+        case OverloadArgType::UChar:
+        case OverloadArgType::UShort:
+        case OverloadArgType::UInt:
+        case OverloadArgType::ULong:
           u2arg(workItem, callInst, fnName, overload, result, _max_);
           break;
-        case 'c':
-        case 's':
-        case 'i':
-        case 'l':
+        case OverloadArgType::Char:
+        case OverloadArgType::Short:
+        case OverloadArgType::Int:
+        case OverloadArgType::Long:
           s2arg(workItem, callInst, fnName, overload, result, _max_);
           break;
         default:
-          FATAL_ERROR("Unsupported argument type: %c",
-                      getOverloadArgType(overload));
+          FATAL_ERROR("Unsupported argument type: %s",
+                      argtype2str(getOverloadArgType(overload)).c_str());
       }
     }
 
@@ -456,8 +600,9 @@ namespace oclgrind
     {
       switch (getOverloadArgType(overload))
       {
-        case 'f':
-        case 'd':
+        case OverloadArgType::Half:
+        case OverloadArgType::Float:
+        case OverloadArgType::Double:
           if (ARG(1)->getType()->isVectorTy())
           {
             f2arg(workItem, callInst, fnName, overload, result, fmin);
@@ -472,21 +617,21 @@ namespace oclgrind
             }
           }
           break;
-        case 'h':
-        case 't':
-        case 'j':
-        case 'm':
+        case OverloadArgType::UChar:
+        case OverloadArgType::UShort:
+        case OverloadArgType::UInt:
+        case OverloadArgType::ULong:
           u2arg(workItem, callInst, fnName, overload, result, _min_);
           break;
-        case 'c':
-        case 's':
-        case 'i':
-        case 'l':
+        case OverloadArgType::Char:
+        case OverloadArgType::Short:
+        case OverloadArgType::Int:
+        case OverloadArgType::Long:
           s2arg(workItem, callInst, fnName, overload, result, _min_);
           break;
         default:
-          FATAL_ERROR("Unsupported argument type: %c",
-                      getOverloadArgType(overload));
+          FATAL_ERROR("Unsupported argument type: %s",
+                      argtype2str(getOverloadArgType(overload)).c_str());
       }
     }
 
@@ -820,16 +965,16 @@ namespace oclgrind
     }
 
     static inline float getCoordinate(const llvm::Value *value, int index,
-                                      char type, WorkItem *workItem)
+                                      OverloadArgType type, WorkItem *workItem)
     {
       switch (type)
       {
-        case 'i':
+        case OverloadArgType::Int:
           return workItem->getOperand(value).getSInt(index);
-        case 'f':
+        case OverloadArgType::Float:
           return workItem->getOperand(value).getFloat(index);
         default:
-          FATAL_ERROR("Unsupported coordinate type: '%c'", type);
+          FATAL_ERROR("Unsupported coordinate type: '%s'", argtype2str(type).c_str());
       }
     }
 
@@ -1226,7 +1371,7 @@ namespace oclgrind
 
       // Get coordinates
       float s = 0.f, t = 0.f, r = 0.f;
-      char coordType = *overload.rbegin();
+      const OverloadArgType coordType = getOverloadCoordinateType(overload);
       s = getCoordinate(ARG(coordIndex), 0, coordType, workItem);
       if (ARG(coordIndex)->getType()->isVectorTy())
       {
@@ -1348,7 +1493,7 @@ namespace oclgrind
 
       // Get coordinates
       float s = 0.f, t = 0.f, r = 0.f;
-      char coordType = *overload.rbegin();
+      const OverloadArgType coordType = getOverloadCoordinateType(overload);
       s = getCoordinate(ARG(coordIndex), 0, coordType, workItem);
       if (ARG(coordIndex)->getType()->isVectorTy())
       {
@@ -1425,7 +1570,7 @@ namespace oclgrind
 
       // Get coordinates
       float s = 0.f, t = 0.f, r = 0.f;
-      char coordType = *overload.rbegin();
+      const OverloadArgType coordType = getOverloadCoordinateType(overload);
       s = getCoordinate(ARG(coordIndex), 0, coordType, workItem);
       if (ARG(coordIndex)->getType()->isVectorTy())
       {
@@ -1775,21 +1920,21 @@ namespace oclgrind
       {
         switch (getOverloadArgType(overload))
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
             result.setUInt(UARGV(0,i), i);
             break;
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
             result.setSInt(abs(SARGV(0,i)), i);
             break;
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -1800,20 +1945,20 @@ namespace oclgrind
       {
         switch (getOverloadArgType(overload))
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
           {
             uint64_t a = UARGV(0, i);
             uint64_t b = UARGV(1, i);
             result.setUInt(_max_(a,b) - _min_(a,b), i);
             break;
           }
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
           {
             int64_t a = SARGV(0, i);
             int64_t b = SARGV(1, i);
@@ -1821,8 +1966,8 @@ namespace oclgrind
             break;
           }
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -1835,35 +1980,35 @@ namespace oclgrind
         int64_t  sresult = SARGV(0,i) + SARGV(1,i);
         switch (getOverloadArgType(overload))
         {
-          case 'h':
+          case OverloadArgType::UChar:
             uresult = _min_<uint64_t>(uresult, UINT8_MAX);
             result.setUInt(uresult, i);
             break;
-          case 't':
+          case OverloadArgType::UShort:
             uresult = _min_<uint64_t>(uresult, UINT16_MAX);
             result.setUInt(uresult, i);
             break;
-          case 'j':
+          case OverloadArgType::UInt:
             uresult = _min_<uint64_t>(uresult, UINT32_MAX);
             result.setUInt(uresult, i);
             break;
-          case 'm':
+          case OverloadArgType::ULong:
             uresult = (UARGV(1, i) > uresult) ? UINT64_MAX : uresult;
             result.setUInt(uresult, i);
             break;
-          case 'c':
+          case OverloadArgType::Char:
             sresult = _clamp_<int64_t>(sresult, INT8_MIN, INT8_MAX);
             result.setSInt(sresult, i);
             break;
-          case 's':
+          case OverloadArgType::Short:
             sresult = _clamp_<int64_t>(sresult, INT16_MIN, INT16_MAX);
             result.setSInt(sresult, i);
             break;
-          case 'i':
+          case OverloadArgType::Int:
             sresult = _clamp_<int64_t>(sresult, INT32_MIN, INT32_MAX);
             result.setSInt(sresult, i);
             break;
-          case 'l':
+          case OverloadArgType::Long:
             if ((SARGV(0,i)>0) == (SARGV(1,i)>0) &&
                 (SARGV(0,i)>0) != (sresult>0))
             {
@@ -1872,8 +2017,8 @@ namespace oclgrind
             result.setSInt(sresult, i);
             break;
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -1901,10 +2046,10 @@ namespace oclgrind
       {
         switch (getOverloadArgType(overload))
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
           {
             uint64_t a = UARGV(0, i);
             uint64_t b = UARGV(1, i);
@@ -1912,10 +2057,10 @@ namespace oclgrind
             result.setUInt((a>>1) + (b>>1) + c, i);
             break;
           }
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
           {
             int64_t a = SARGV(0, i);
             int64_t b = SARGV(1, i);
@@ -1924,8 +2069,8 @@ namespace oclgrind
             break;
           }
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -1995,20 +2140,20 @@ namespace oclgrind
       {
         switch (getOverloadArgType(overload))
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
           {
             uint64_t r =
               _umul_hi_(UARGV(0, i), UARGV(1, i), result.size<<3) + UARGV(2, i);
             result.setUInt(r, i);
             break;
           }
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
           {
             int64_t r =
               _smul_hi_(SARGV(0, i), SARGV(1, i), result.size<<3) + SARGV(2, i);
@@ -2016,8 +2161,8 @@ namespace oclgrind
             break;
           }
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -2030,19 +2175,19 @@ namespace oclgrind
         int64_t  sresult = SARGV(0,i)*SARGV(1,i) + SARGV(2,i);
         switch (getOverloadArgType(overload))
         {
-          case 'h':
+          case OverloadArgType::UChar:
             uresult = _min_<uint64_t>(uresult, UINT8_MAX);
             result.setUInt(uresult, i);
             break;
-          case 't':
+          case OverloadArgType::UShort:
             uresult = _min_<uint64_t>(uresult, UINT16_MAX);
             result.setUInt(uresult, i);
             break;
-          case 'j':
+          case OverloadArgType::UInt:
             uresult = _min_<uint64_t>(uresult, UINT32_MAX);
             result.setUInt(uresult, i);
             break;
-          case 'm':
+          case OverloadArgType::ULong:
           {
             uint64_t hi = _umul_hi_(UARGV(0, i), UARGV(1, i), 64);
             if (hi || UARGV(2, i) > uresult)
@@ -2052,19 +2197,19 @@ namespace oclgrind
             result.setUInt(uresult, i);
             break;
           }
-          case 'c':
+          case OverloadArgType::Char:
             sresult = _clamp_<int64_t>(sresult, INT8_MIN, INT8_MAX);
             result.setSInt(sresult, i);
             break;
-          case 's':
+          case OverloadArgType::Short:
             sresult = _clamp_<int64_t>(sresult, INT16_MIN, INT16_MAX);
             result.setSInt(sresult, i);
             break;
-          case 'i':
+          case OverloadArgType::Int:
             sresult = _clamp_<int64_t>(sresult, INT32_MIN, INT32_MAX);
             result.setSInt(sresult, i);
             break;
-          case 'l':
+          case OverloadArgType::Long:
             // Check for overflow in multiplication
             if (_smul_hi_(SARGV(0, i), SARGV(1, i), 64))
             {
@@ -2082,8 +2227,8 @@ namespace oclgrind
             result.setSInt(sresult, i);
             break;
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -2099,27 +2244,27 @@ namespace oclgrind
       {
         switch (getOverloadArgType(overload))
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
           {
             uint64_t r = _umul_hi_(UARGV(0, i), UARGV(1, i), result.size<<3);
             result.setUInt(r, i);
             break;
           }
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
           {
             int64_t r = _smul_hi_(SARGV(0, i), SARGV(1, i), result.size<<3);
             result.setSInt(r, i);
             break;
           }
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -2141,10 +2286,10 @@ namespace oclgrind
       {
         switch (getOverloadArgType(overload))
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
           {
             uint64_t a = UARGV(0, i);
             uint64_t b = UARGV(1, i);
@@ -2152,10 +2297,10 @@ namespace oclgrind
             result.setUInt((a>>1) + (b>>1) + c, i);
             break;
           }
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
           {
             int64_t a = SARGV(0, i);
             int64_t b = SARGV(1, i);
@@ -2164,8 +2309,8 @@ namespace oclgrind
             break;
           }
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -2190,35 +2335,35 @@ namespace oclgrind
         int64_t  sresult = SARGV(0,i) - SARGV(1,i);
         switch (getOverloadArgType(overload))
         {
-          case 'h':
+          case OverloadArgType::UChar:
             uresult = uresult > UINT8_MAX ? 0 : uresult;
             result.setUInt(uresult, i);
             break;
-          case 't':
+          case OverloadArgType::UShort:
             uresult = uresult > UINT16_MAX ? 0 : uresult;
             result.setUInt(uresult, i);
             break;
-          case 'j':
+          case OverloadArgType::UInt:
             uresult = uresult > UINT32_MAX ? 0 : uresult;
             result.setUInt(uresult, i);
             break;
-          case 'm':
+          case OverloadArgType::ULong:
             uresult = (UARGV(1, i) > UARGV(0, i)) ? 0 : uresult;
             result.setUInt(uresult, i);
             break;
-          case 'c':
+          case OverloadArgType::Char:
             sresult = _clamp_<int64_t>(sresult, INT8_MIN, INT8_MAX);
             result.setSInt(sresult, i);
             break;
-          case 's':
+          case OverloadArgType::Short:
             sresult = _clamp_<int64_t>(sresult, INT16_MIN, INT16_MAX);
             result.setSInt(sresult, i);
             break;
-          case 'i':
+          case OverloadArgType::Int:
             sresult = _clamp_<int64_t>(sresult, INT32_MIN, INT32_MAX);
             result.setSInt(sresult, i);
             break;
-          case 'l':
+          case OverloadArgType::Long:
             if ((SARGV(0,i)>0) != (SARGV(1,i)>0) &&
                 (SARGV(0,i)>0) != (sresult>0))
             {
@@ -2227,8 +2372,8 @@ namespace oclgrind
             result.setSInt(sresult, i);
             break;
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -2709,52 +2854,54 @@ namespace oclgrind
     {
       switch (getOverloadArgType(overload))
       {
-        case 'f':
-        case 'd':
+        case OverloadArgType::Half:
+        case OverloadArgType::Float:
+        case OverloadArgType::Double:
           f3arg(workItem, callInst, fnName, overload, result, _fbitselect_);
           break;
-        case 'h':
-        case 't':
-        case 'j':
-        case 'm':
-        case 'c':
-        case 's':
-        case 'i':
-        case 'l':
+        case OverloadArgType::UChar:
+        case OverloadArgType::UShort:
+        case OverloadArgType::UInt:
+        case OverloadArgType::ULong:
+        case OverloadArgType::Char:
+        case OverloadArgType::Short:
+        case OverloadArgType::Int:
+        case OverloadArgType::Long:
           u3arg(workItem, callInst, fnName, overload, result, _ibitselect_);
           break;
         default:
-          FATAL_ERROR("Unsupported argument type: %c",
-                      getOverloadArgType(overload));
+          FATAL_ERROR("Unsupported argument type: %s",
+                      argtype2str(getOverloadArgType(overload)).c_str());
       }
     }
 
     DEFINE_BUILTIN(select_builtin)
     {
-      char type = getOverloadArgType(overload);
+      const OverloadArgType type = getOverloadArgType(overload);
       for (unsigned i = 0; i < result.num; i++)
       {
         int64_t c = SARGV(2, i);
         bool _c = (result.num > 1) ? c & INT64_MIN : c;
         switch (type)
         {
-          case 'f':
-          case 'd':
+          case OverloadArgType::Half:
+          case OverloadArgType::Float:
+          case OverloadArgType::Double:
             result.setFloat(_c ? FARGV(1, i) : FARGV(0, i), i);
             break;
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
             result.setSInt(_c ? SARGV(1, i) : SARGV(0, i), i);
             break;
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
     }
@@ -3034,10 +3181,10 @@ namespace oclgrind
       {
         switch (getOverloadArgType(overload))
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
           {
             uint64_t in = UARGV(0, i);
             if (result.size == 4)
@@ -3046,19 +3193,20 @@ namespace oclgrind
               result.setFloat(in ? (double)in : 0.0, i);
             break;
           }
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
             result.setFloat(SARGV(0, i), i);
             break;
-          case 'f':
-          case 'd':
+          case OverloadArgType::Half:
+          case OverloadArgType::Float:
+          case OverloadArgType::Double:
             result.setFloat(FARGV(0, i), i);
             break;
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
       }
       fesetround(origRnd);
@@ -3066,7 +3214,7 @@ namespace oclgrind
 
     DEFINE_BUILTIN(convert_half)
     {
-      float f;
+      float f = 0.f;
       HalfRoundMode rmode = Half_RTE;
       if (fnName.find("_rtz") != std::string::npos)
         rmode = Half_RTZ;
@@ -3074,29 +3222,31 @@ namespace oclgrind
         rmode = Half_RTN;
       else if (fnName.find("_rtp") != std::string::npos)
         rmode = Half_RTP;
-      const char srcType = getOverloadArgType(overload);
+      const OverloadArgType srcType = getOverloadArgType(overload);
       for (unsigned i = 0; i < result.num; i++)
       {
         switch (srcType)
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
             f = (float)UARGV(0, i);
             break;
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
             f = (float)SARGV(0, i);
             break;
-          case 'd':
-          case 'f':
+          case OverloadArgType::Half:
+          case OverloadArgType::Float:
+          case OverloadArgType::Double:
             f = FARGV(0, i);
+            break;
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(srcType).c_str());
         }
         result.setUInt(floatToHalf(f, rmode), i);
       }
@@ -3134,20 +3284,20 @@ namespace oclgrind
         uint64_t r;
         switch (getOverloadArgType(overload))
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
             r = UARGV(0, i);
             if (sat)
             {
               r = _min_(r, max);
             }
             break;
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
           {
             int64_t si = SARGV(0, i);
             r = si;
@@ -3164,8 +3314,9 @@ namespace oclgrind
             }
             break;
           }
-          case 'f':
-          case 'd':
+          case OverloadArgType::Half:
+          case OverloadArgType::Float:
+          case OverloadArgType::Double:
             if (sat)
             {
               r = rint(_clamp_((long double)FARGV(0, i),
@@ -3177,8 +3328,8 @@ namespace oclgrind
             }
             break;
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
 
         result.setUInt(r, i);
@@ -3222,28 +3373,29 @@ namespace oclgrind
         int64_t r;
         switch (getOverloadArgType(overload))
         {
-          case 'h':
-          case 't':
-          case 'j':
-          case 'm':
+          case OverloadArgType::UChar:
+          case OverloadArgType::UShort:
+          case OverloadArgType::UInt:
+          case OverloadArgType::ULong:
             r = UARGV(0, i);
             if (sat)
             {
               r = _min_((uint64_t)r, (uint64_t)max);
             }
             break;
-          case 'c':
-          case 's':
-          case 'i':
-          case 'l':
+          case OverloadArgType::Char:
+          case OverloadArgType::Short:
+          case OverloadArgType::Int:
+          case OverloadArgType::Long:
             r = SARGV(0, i);
             if (sat)
             {
               r = _clamp_(r, min, max);
             }
             break;
-          case 'f':
-          case 'd':
+          case OverloadArgType::Half:
+          case OverloadArgType::Float:
+          case OverloadArgType::Double:
             if (sat)
             {
               r = rint(_clamp_((long double)FARGV(0, i),
@@ -3255,8 +3407,8 @@ namespace oclgrind
             }
             break;
           default:
-            FATAL_ERROR("Unsupported argument type: %c",
-                        getOverloadArgType(overload));
+            FATAL_ERROR("Unsupported argument type: %s",
+                        argtype2str(getOverloadArgType(overload)).c_str());
         }
 
         result.setSInt(r, i);

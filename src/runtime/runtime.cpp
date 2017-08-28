@@ -56,7 +56,9 @@ using namespace std;
   cl_khr_int64_base_atomics            \
   cl_khr_int64_extended_atomics        \
   cl_khr_byte_addressable_store        \
-  cl_khr_fp64"
+  cl_khr_fp64                          \
+  cl_khr_fp16                          \
+  cl_arm_non_uniform_work_group_size"
 #define DEVICE_TYPE (CL_DEVICE_TYPE_CPU | \
                      CL_DEVICE_TYPE_GPU | \
                      CL_DEVICE_TYPE_ACCELERATOR | \

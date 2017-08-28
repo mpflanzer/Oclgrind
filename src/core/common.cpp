@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "common.h"
+#include "half.h"
 
 #if defined(_WIN32) && !defined(__MINGW32__)
 #include <time.h>
@@ -99,6 +100,8 @@ namespace oclgrind
   {
     switch (size)
     {
+    case 2:
+      return halfToFloat(((uint16_t*)data)[index]);
     case 4:
       return ((float*)data)[index];
     case 8:
@@ -155,6 +158,9 @@ namespace oclgrind
   {
     switch (size)
     {
+    case 2:
+      ((uint16_t*)data)[index] = floatToHalf(value);
+      break;
     case 4:
       ((float*)data)[index] = value;
       break;
@@ -359,6 +365,12 @@ namespace oclgrind
       default:
         FATAL_ERROR("Unsupported constant int size: %u bytes", size);
       }
+      break;
+    }
+    case llvm::Type::HalfTyID:
+    {
+      *(uint16_t*)data =
+        ((llvm::ConstantFP*)constant)->getValueAPF().bitcastToAPInt().getLimitedValue();
       break;
     }
     case llvm::Type::FloatTyID:

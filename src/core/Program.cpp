@@ -61,6 +61,7 @@ extern const char OPENCL_C_H_DATA[];
 
 const char *EXTENSIONS[] =
 {
+  "cl_khr_fp16",
   "cl_khr_fp64",
   "cl_khr_3d_image_writes",
   "cl_khr_global_int32_base_atomics",
@@ -303,6 +304,7 @@ bool Program::build(const char *options, list<Header> headers)
   bool optimize = true;
   const char *clstd = NULL;
   m_requiresUniformWorkGroups = false;
+  bool allowNonUninformWorkGroups = false;
 
   // Disable optimizations by default if in interactive mode
   if (checkEnv("OCLGRIND_INTERACTIVE"))
@@ -350,6 +352,12 @@ bool Program::build(const char *options, list<Header> headers)
       if (strcmp(opt, "-cl-no-signed-zeros") == 0)
         continue;
 
+      if (strcmp(opt, "-cl-arm-non-uniform-work-group-size") == 0)
+      {
+        allowNonUninformWorkGroups = true;
+        continue;
+      }
+
       // Check for -cl-uniform-work-group-size flag
       if (strcmp(opt, "-cl-uniform-work-group-size") == 0)
       {
@@ -375,7 +383,7 @@ bool Program::build(const char *options, list<Header> headers)
   args.push_back(clstd);
 
   // If compiling for OpenCL 1.X, require uniform work-groups
-  if (strncmp(clstd, "-cl-std=CL1.", 12) == 0)
+  if (strncmp(clstd, "-cl-std=CL1.", 12) == 0 && !allowNonUninformWorkGroups)
     m_requiresUniformWorkGroups = true;
 
   // Pre-compiled header

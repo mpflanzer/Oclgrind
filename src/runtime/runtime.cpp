@@ -625,8 +625,8 @@ clGetDeviceInfo
     result_data.cluint = 1024;
     break;
   case CL_DEVICE_NAME:
-    result_size = sizeof(DEVICE_NAME);
-    str = DEVICE_NAME;
+    str = oclgrind::getEnvCStr("OCLGRIND_DEVICE_NAME", DEVICE_NAME);
+    result_size = strlen(str);
     break;
   case CL_DEVICE_VENDOR:
     result_size = sizeof(DEVICE_VENDOR);

@@ -303,6 +303,15 @@ static bool parseArguments(int argc, char *argv[])
     {
       setEnvironment("OCLGRIND_UNINITIALIZED", "1");
     }
+    else if (!strcmp(argv[i], "--force-device-name"))
+    {
+      if (++i >= argc)
+      {
+        cerr << "Missing argument to --force-device-name" << endl;
+        return false;
+      }
+      setEnvironment("OCLGRIND_DEVICE_NAME", argv[i]);
+    }
     else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--version"))
     {
       cout << endl;
@@ -456,6 +465,8 @@ static void printUsage()
              "Don't suppress uniform write-write data-races" << endl
     << "     --uninitialized           "
              "Report usage of uninitialized values" << endl
+    << "     --force-device-name       "
+             "Set device name to the given value" << endl
     << "  -v --version                 "
              "Display version information" << endl
     << endl

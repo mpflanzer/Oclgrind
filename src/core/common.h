@@ -160,6 +160,9 @@ namespace oclgrind
   // Get an environment variable as an integer
   unsigned getEnvInt(const char *var, int def=0, bool allowZero=true);
 
+  // Get an environment variable as an const char*
+  const char* getEnvCStr(const char *var, const char *def=nullptr);
+
   // Output an instruction in human-readable format
   void dumpInstruction(std::ostream& out, const llvm::Instruction *instruction);
 
